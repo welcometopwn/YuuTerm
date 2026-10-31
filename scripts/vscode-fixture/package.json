@@ -1,0 +1,10 @@
+{
+  "name": "yuuterm-editor-fixture",
+  "displayName": "YuuTerm isolated editor fixture",
+  "version": "0.0.1",
+  "publisher": "yuuterm-local",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "main": "./extension.cjs"
+}

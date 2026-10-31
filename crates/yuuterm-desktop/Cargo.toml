@@ -1,0 +1,38 @@
+[package]
+name = "yuuterm-desktop"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+tauri = { version = "=2.12.4", features = [] }
+serde.workspace = true
+serde_json.workspace = true
+yuuterm-core.workspace = true
+yuuterm-ssh = { path = "../yuuterm-ssh" }
+x509-parser = "0.18"
+tokio = { version = "1", features = ["sync"] }
+rfd = { version = "=0.17.2", default-features = false }
+tempfile = "3"
+tokio-util = { version = "0.7", features = ["rt"] }
+webview2-com = { version = "=0.39.1", optional = true }
+windows = { version = "0.62", features = ["Win32_System_SystemInformation", "Win32_UI_Shell", "Win32_System_Com", "Win32_Storage_FileSystem", "Win32_System_Ole", "Win32_System_Variant", "Win32_System_LibraryLoader", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_UI_Input_KeyboardAndMouse", "Win32_Graphics_Gdi", "Win32_Storage_Xps", "Win32_Security_Credentials", "Win32_System_Registry"] }
+image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg", "ico"] }
+lzma-rust2 = { version = "=0.24.0", default-features = false, features = ["std"] }
+
+windows-core = "0.62"
+zeroize = "1"
+sha2 = "0.10"
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+
+[build-dependencies]
+tauri-build = { version = "=2.7.3", features = [] }
+
+[features]
+default = []
+custom-protocol = ["tauri/custom-protocol"]
+capture = ["custom-protocol", "dep:webview2-com", "yuuterm-ssh/startup-probe"]
+credential-probe = []
+rdp-live = ["rdp-probe"]
+rdp-probe = ["custom-protocol"]

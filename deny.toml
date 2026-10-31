@@ -1,0 +1,35 @@
+# Windows is the supported product target. Include build and developer features.
+[graph]
+targets = ["x86_64-pc-windows-msvc"]
+all-features = true
+exclude-dev = false
+
+[advisories]
+db-path = "target/dependency-review/advisory-dbs"
+db-urls = ["https://github.com/RustSec/advisory-db"]
+unmaintained = "all"
+unsound = "all"
+yanked = "deny"
+ignore = []
+
+[licenses]
+confidence-threshold = 0.95
+allow = ["MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Zlib", "Unicode-3.0", "MPL-2.0", "OpenSSL", "CC0-1.0", "BSL-1.0"]
+unused-allowed-license = "allow"
+[licenses.private]
+ignore = true
+
+[[licenses.exceptions]]
+name = "epaint_default_fonts"
+version = "=0.37.0"
+allow = ["OFL-1.1", "Ubuntu-font-1.0"]
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

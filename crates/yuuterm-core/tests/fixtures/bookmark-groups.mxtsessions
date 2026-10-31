@@ -1,0 +1,26 @@
+; Synthetic hosts only; no user export.
+[Bookmarks]
+SubRep=
+Root=#109#1%root.example.test%23%fixture
+[Bookmarks_1]
+SubRep= Team \ Production
+SSH nested=#144#0%ssh.example.test%22%fixture
+RDP nested=#109#4%rdp.example.test%3389%fixture
+[Bookmarks_2]
+Late folder=#109#5%vnc.example.test%5901%-1%0
+SubRep=Team\Lab
+[Bookmarks_3]
+SubRep= Operations
+Serial group=#109#8%-1%9600%3%0%0%0%0%COM7 (synthetic)
+[Bookmarks_4]
+SubRep=This folder name is deliberately too long to fit the sixty four byte bound
+Too long=#109#1%reject.example.test%23%fixture
+[Bookmarks_5]
+SubRep=One
+Duplicate=#109#1%reject.example.test%23%fixture
+SubRep=Two
+[Passwords]
+SubRep=Never imported
+Ignored=fixture-secret-not-a-real-password
+[Bookmarks_6]
+Missing folder=#109#1%ungrouped.example.test%23%fixture

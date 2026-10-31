@@ -1,0 +1,11 @@
+/target/
+/.env
+*.log
+*.tmp
+/node_modules/
+/dist/
+/crates/yuuterm-desktop/gen/
+/crates/yuuterm-desktop/icons/*
+!/crates/yuuterm-desktop/icons/source.svg
+!/crates/yuuterm-desktop/icons/icon.ico
+!/crates/yuuterm-desktop/icons/icon.png

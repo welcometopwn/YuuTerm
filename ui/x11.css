@@ -1,0 +1,23 @@
+.x11-settings {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 12px;
+}
+.x11-settings .check-label {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
+}
+.x11-settings input[type="checkbox"] {
+  width: auto;
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+.x11-settings button {
+  margin-bottom: 8px;
+}
+.x11-settings small {
+  display: block;
+  line-height: 1.5;
+}

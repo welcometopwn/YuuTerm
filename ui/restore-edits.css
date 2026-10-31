@@ -1,0 +1,33 @@
+.restore-edits-offer {
+  position: fixed;
+  bottom: 8px;
+  right: 12px;
+  z-index: 15;
+}
+.restore-edits-list {
+  max-height: 42vh;
+  overflow: auto;
+}
+.restore-edits-list section {
+  border: 1px solid var(--line);
+  padding: 12px;
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.restore-edits-list strong,
+.restore-edits-list code {
+  display: block;
+}
+.restore-edits-list .dialog-actions {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+.restore-edits-list .dialog-actions button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+.restore-edits-list code {
+  font-size: 11px;
+  color: var(--muted);
+}

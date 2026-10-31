@@ -1,0 +1,38 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "publisher": "welcometopwn",
+    "shortDescription": "A compact Windows terminal workspace.",
+    "icon": [
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "../../target/x11-runtime/x11/": "x11/",
+      "../../LICENSE": "LICENSE",
+      "../../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md",
+      "../../target/third-party/": "third-party/"
+    },
+    "windows": {
+      "allowDowngrades": false,
+      "bundleVCRuntime": true,
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "installerHooks": "windows/installer-hooks.nsh",
+        "languages": [
+          "English"
+        ],
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico"
+      }
+    },
+    "license": "MIT"
+  }
+}

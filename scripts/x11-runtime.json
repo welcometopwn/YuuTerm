@@ -1,0 +1,592 @@
+{
+  "mirror": "https://mirrors.kernel.org/sourceware/cygwin",
+  "setup_index_signed_by": "56405CF6FCC81574682A5D561A698DE9E2E56300",
+  "checked": "2026-10-27",
+  "bin": [
+    "XWin.exe",
+    "cat.exe",
+    "cygX11-6.dll",
+    "cygXau-6.dll",
+    "cygXdmcp-6.dll",
+    "cygXfont2-2.dll",
+    "cygbrotlicommon-1.dll",
+    "cygbrotlidec-1.dll",
+    "cygbz2-1.dll",
+    "cygcom_err-2.dll",
+    "cygfontenc-1.dll",
+    "cygfreetype-6.dll",
+    "cyggcc_s-seh-1.dll",
+    "cyggssapi_krb5-2.dll",
+    "cygiconv-2.dll",
+    "cygintl-8.dll",
+    "cygk5crypto-3.dll",
+    "cygkrb5-3.dll",
+    "cygkrb5support-0.dll",
+    "cygncursesw-10.dll",
+    "cygpixman-1-0.dll",
+    "cygpng16-16.dll",
+    "cygreadline7.dll",
+    "cygtirpc-3.dll",
+    "cygwin1.dll",
+    "cygxcb-1.dll",
+    "cygxcb-composite-0.dll",
+    "cygxcb-ewmh-2.dll",
+    "cygxcb-icccm-4.dll",
+    "cygxcb-image-0.dll",
+    "cygxcb-shm-0.dll",
+    "cygxcb-util-1.dll",
+    "cygxcb-xfixes-0.dll",
+    "cygxkbfile-1.dll",
+    "cygz.dll",
+    "sh.exe",
+    "xkbcomp.exe"
+  ],
+  "packages": [
+    {
+      "name": "bash",
+      "version": "5.2.21-1",
+      "install": {
+        "path": "x86_64/release/bash/bash-5.2.21-1.tar.xz",
+        "size": 1650932,
+        "sha512": "c3a5594f1c248dd27a3b5aa10c31fb1651072eae878479d3d8cab09c28354ce4509a2fe230f176ad200a6484a561bc10c2dc9c74c4e9f03164190dac2e683d65"
+      },
+      "source": {
+        "path": "x86_64/release/bash/bash-5.2.21-1-src.tar.xz",
+        "size": 10951680,
+        "sha512": "b5c71e11f625de28282572bcadba337567119bbc97391eb9d16cafd0066089f8f3bf7b68f919245f64463304119f4297f7165141f5101a76a3cb853e4eb0ede1"
+      }
+    },
+    {
+      "name": "coreutils",
+      "version": "9.0-1",
+      "install": {
+        "path": "x86_64/release/coreutils/coreutils-9.0-1.tar.xz",
+        "size": 2767296,
+        "sha512": "530f47640d878f5953580f3556c492a93786191abe573322026b70206a46c7f17d05927784db3e7f2c044d1555f35941880316f7288b887eaec770a9eda4c687"
+      },
+      "source": {
+        "path": "x86_64/release/coreutils/coreutils-9.0-1-src.tar.xz",
+        "size": 5634596,
+        "sha512": "20ea749c3226568d4771bed23a65c93612cfb9c3f3a292e53e1ea2d0c1a155fe123d067a8ffcc4c0c35f113840f0841d9cc0b142423e9a31bde9e65b86762c46"
+      }
+    },
+    {
+      "name": "cygwin",
+      "version": "3.6.12-1",
+      "install": {
+        "path": "x86_64/release/cygwin/cygwin-3.6.12-1-x86_64.tar.xz",
+        "size": 1621132,
+        "sha512": "c2ceaed3f6fb6c52c30c3fc06fe0ace4b5d9c452dc0a20fd31ffbeb46fd3f98cdea82136ff2feb6d889cb56731336808925f93b85bd9315f5fd544848a2bc582"
+      },
+      "source": {
+        "path": "src/release/cygwin/cygwin-3.6.12-1-src.tar.xz",
+        "size": 9318356,
+        "sha512": "9d70312a931f06d1158e7e913a23fb4aec4bb5fce6c5b55caf274a6d63905248625beaf1391f2d4518fbf5099523fdab2aa26834651856f4693fbf8862027889"
+      }
+    },
+    {
+      "name": "libX11_6",
+      "version": "1.8.13-1",
+      "install": {
+        "path": "x86_64/release/libX11/libX11_6/libX11_6-1.8.13-1-x86_64.tar.xz",
+        "size": 828700,
+        "sha512": "e3ea48afcd7d60428c9e51ce2203c65a5919d3934ea5a082b0ed70a8209e09212104a68910d8573678e88ae95405a84a6d6e0d9a2482c4271fc05288ca2d21ff"
+      },
+      "source": {
+        "path": "src/release/libX11/libX11-1.8.13-1-src.tar.xz",
+        "size": 1806708,
+        "sha512": "cc5efd1383717c7f4c93b2fdc621ee887731cff4d8de5ed5616d1d68c10064bf96bf42da325eeab09cf1e9c87060a276be235e3ededca16bd36d2b8a6aab09c8"
+      }
+    },
+    {
+      "name": "libXau6",
+      "version": "1.0.12-1",
+      "install": {
+        "path": "x86_64/release/libXau/libXau6/libXau6-1.0.12-1.tar.xz",
+        "size": 21596,
+        "sha512": "d1f147d546bc370f79721bed9ef136f35f94a4724af25739dd76d991c467ee395cc5495afdb2a9aeadc9025767054d896364898ef56ed4818a3118481e3d4495"
+      },
+      "source": {
+        "path": "x86_64/release/libXau/libXau-1.0.12-1-src.tar.xz",
+        "size": 284484,
+        "sha512": "7d5f5413ebeed68f947b4898e9911a2415cc47ffaf2b533a79fc3b9f3e5276e7c0634bd92c6f8bf1a898ceb94f848f43e250c56b7e27001a6553496d71739678"
+      }
+    },
+    {
+      "name": "libXdmcp6",
+      "version": "1.1.5-1",
+      "install": {
+        "path": "x86_64/release/libXdmcp/libXdmcp6/libXdmcp6-1.1.5-1.tar.xz",
+        "size": 23960,
+        "sha512": "7b94f962024a72adc5be464651af4c3cde9ce2258331f03fa863fbd0c14df748c5f3db26445b3c6770f85c11bf1323c3c0135fff7ad1d0002f5fb2b9ff4e2f1d"
+      },
+      "source": {
+        "path": "x86_64/release/libXdmcp/libXdmcp-1.1.5-1-src.tar.xz",
+        "size": 299760,
+        "sha512": "0cd4b927f8ce2f2096fc5493b4bb27846330cdbfc40efdb554a788f3a566b8508e234b24a5ad1242fcd336427bca077c8bfe5cd768881764af93501d595d0c71"
+      }
+    },
+    {
+      "name": "libXfont2_2",
+      "version": "2.0.9-1",
+      "install": {
+        "path": "x86_64/release/libXfont2/libXfont2_2/libXfont2_2-2.0.9-1-x86_64.tar.xz",
+        "size": 132228,
+        "sha512": "f5265848fb71a18fe45b514187a2e2c0f36e03d9f385b10178589f760b8d76a5a7c8856b7b9aca206616c3bd1d374f707244ce3146b85da8f117b286f1d11d97"
+      },
+      "source": {
+        "path": "src/release/libXfont2/libXfont2-2.0.9-1-src.tar.xz",
+        "size": 481276,
+        "sha512": "7c605666930d0fe4ba2d4a3544238b4be0c23d55b1d64d7a84cc4838a19eca3d3524841eb68f5748f3393f1b7d84f7f5f8dfbfd662cda30ef25c8d0cb7c094fe"
+      }
+    },
+    {
+      "name": "libbrotlicommon1",
+      "version": "1.2.1-1",
+      "install": {
+        "path": "x86_64/release/brotli/libbrotlicommon1/libbrotlicommon1-1.2.1-1-x86_64.tar.xz",
+        "size": 55328,
+        "sha512": "8883ed98c0682f1cabd5855dac730bd2c5c8298a3d945ae39803b1d1542063bbd299cd0d5b238a2a281e2c075b87711dd0f09f1e7386c55e21f152cbca76f3a6"
+      },
+      "source": {
+        "path": "src/release/brotli/brotli-1.2.1-1-src.tar.xz",
+        "size": 646740,
+        "sha512": "7a83a62aabfb6e4ab40b24159f5ab08ad8c14fa5277507eefa33d0728bc14b080995888d9eb70bebd2ebaf12407f6ef7e61bf0082aa442ad5914772ca21399b0"
+      }
+    },
+    {
+      "name": "libbrotlidec1",
+      "version": "1.2.1-1",
+      "install": {
+        "path": "x86_64/release/brotli/libbrotlidec1/libbrotlidec1-1.2.1-1-x86_64.tar.xz",
+        "size": 20844,
+        "sha512": "14d631ba1f23c2cfc3d8cd13d3bb72927f491eac1a66cca81b0fd8163edf02916d4936fe0d3f5fa246aa267aa1ba2e7feed17ee3882e9b9d52b1ce0a017ba9dc"
+      },
+      "source": {
+        "path": "src/release/brotli/brotli-1.2.1-1-src.tar.xz",
+        "size": 646740,
+        "sha512": "7a83a62aabfb6e4ab40b24159f5ab08ad8c14fa5277507eefa33d0728bc14b080995888d9eb70bebd2ebaf12407f6ef7e61bf0082aa442ad5914772ca21399b0"
+      }
+    },
+    {
+      "name": "libbz2_1",
+      "version": "1.0.8-2",
+      "install": {
+        "path": "x86_64/release/bzip2/libbz2_1/libbz2_1-1.0.8-2-x86_64.tar.xz",
+        "size": 26884,
+        "sha512": "d15d88e8e0fae69f7c4c3025515e748c273d758a0f470312162cec46c4cf0d340d2ef036e3a4f4d03b5edf4508b4927834ffa0f9aa45585a5f3bc3b3163ff675"
+      },
+      "source": {
+        "path": "x86_64/release/bzip2/bzip2-1.0.8-2-src.tar.xz",
+        "size": 810856,
+        "sha512": "9eab5b5ca9cf6bcd28d16c4c7dda92ef98466609473faec28f4dfb299459470ec5a5009e3e40b325b1c6ce87a91c48bb450dda6cc7df2c9b61422692c36e0ac1"
+      }
+    },
+    {
+      "name": "libcom_err2",
+      "version": "1.44.5-1",
+      "install": {
+        "path": "x86_64/release/e2fsprogs/libcom_err2/libcom_err2-1.44.5-1.tar.xz",
+        "size": 4132,
+        "sha512": "3344fbc09364d789e92a81af5ba1e830dd47cef3392a1ee389a2fd49a9cc56a63afc78bebefb92c025d8222e6e454c114d572f0f395e5e20ede2b2266b0fe709"
+      },
+      "source": {
+        "path": "x86_64/release/e2fsprogs/e2fsprogs-1.44.5-1-src.tar.xz",
+        "size": 7600184,
+        "sha512": "5976599e58ce1942f56c2e45d4e88415ae905a29a10451294647012d049951d4662e06c93492914c5c3d880097a834b8a5476464a302cf954a43393faf7fa6d4"
+      }
+    },
+    {
+      "name": "libfontenc1",
+      "version": "1.1.9-1",
+      "install": {
+        "path": "x86_64/release/libfontenc/libfontenc1/libfontenc1-1.1.9-1-x86_64.tar.xz",
+        "size": 22184,
+        "sha512": "5489d3aed796a0a79ff307860397720cc515bac0cb01ae610f608d8154a953dc60ed191db8c5f9fe39bfc9f844c0224de3e1efcba2c5ca64e6ca911de43e08dc"
+      },
+      "source": {
+        "path": "src/release/libfontenc/libfontenc-1.1.9-1-src.tar.xz",
+        "size": 282684,
+        "sha512": "4275e5124d61199816c368228b1a49567835ce62a2f729af95c86e4544c2052c0af5738564f15d4a211589be51a3495059938be4c725be1c1ecd47410320aef7"
+      }
+    },
+    {
+      "name": "libfreetype6",
+      "version": "2.13.3-1",
+      "install": {
+        "path": "x86_64/release/freetype2/libfreetype6/libfreetype6-2.13.3-1.tar.xz",
+        "size": 482788,
+        "sha512": "e1c2069c06a64d8dccf2d2657a22017044825e52b06109dab2808509e2f6c24ac5a3ce35c042203d45c8468634967724752cf713430dc2bca8821c1b5c9ca595"
+      },
+      "source": {
+        "path": "x86_64/release/freetype2/freetype2-2.13.3-1-src.tar.xz",
+        "size": 5140036,
+        "sha512": "179b9881ea531643f80ad4caccf394bec142e469f3c453f69177eac47737004e7f4944c302bd8046a6d517c0b4438d9653568a32c73b384c3a41ccb2f8f0c15f"
+      }
+    },
+    {
+      "name": "libgcc1",
+      "version": "14.4.0-1",
+      "install": {
+        "path": "x86_64/release/gcc/libgcc1/libgcc1-14.4.0-1-x86_64.tar.zst",
+        "size": 59166,
+        "sha512": "5ac8a56e5eee285efcd6dbd05a473e795e181021d7194b8a98dfe2fa201a71f0abe2908e0b4c81490eb5ef472efaeac8e56a61a5f289eee4ad6e90e52a844ff8"
+      },
+      "source": {
+        "path": "x86_64/release/gcc/gcc-14.4.0-1-src.tar.zst",
+        "size": 91626118,
+        "sha512": "a4fa4be6b610a7d868271027c17c46c5f64e1b125e0bec1d51d34cc47f53a670c95841ad4fdcb5aa236244e8b09e5dc194c64e788fc5011459ba2eb29a815299"
+      }
+    },
+    {
+      "name": "libgssapi_krb5_2",
+      "version": "1.15.2-2",
+      "install": {
+        "path": "x86_64/release/krb5/libgssapi_krb5_2/libgssapi_krb5_2-1.15.2-2.tar.xz",
+        "size": 102828,
+        "sha512": "0b9922b28f24f260bccb179c52354377173c1f0243420fb655154b4bd6da99af33b17c172dc46344d9fb38756abb0d8d449d5c7fba7f179dda7a3337c330224f"
+      },
+      "source": {
+        "path": "x86_64/release/krb5/krb5-1.15.2-2-src.tar.xz",
+        "size": 9488172,
+        "sha512": "388e966277d23f15e2687fdebc7a1d9f215780e26d9e69e9370a28e2ba499abf5335d5f6b89d2e44e702c993f49e1b44ee5af6552535d292fdd0f22609da09bd"
+      }
+    },
+    {
+      "name": "libiconv2",
+      "version": "1.19-2",
+      "install": {
+        "path": "x86_64/release/libiconv/libiconv2/libiconv2-1.19-2-x86_64.tar.xz",
+        "size": 555664,
+        "sha512": "a1b23e24e0a495e7163923bcf40a4b933403e0826cfc0d9bde785bc92c909b8c4fb94b1e6b2c0242f4328a723855e72ff3baab9f557ef855b7fe7a7d901b0943"
+      },
+      "source": {
+        "path": "src/release/libiconv/libiconv-1.19-2-src.tar.xz",
+        "size": 5086384,
+        "sha512": "62288f9458b6c5a9eec369900971e9c552747b03df0198fbe1749ca93f76bf3d3079109f115ec0f53b2dc2f72c0c8624e21fa439fc41b9a0be339465fce1c534"
+      }
+    },
+    {
+      "name": "libintl8",
+      "version": "0.22.5-1",
+      "install": {
+        "path": "x86_64/release/gettext/libintl8/libintl8-0.22.5-1.tar.xz",
+        "size": 43256,
+        "sha512": "370a19af888bc7c9ed95cf8ade0d36d5e7cdb634abdebcba260cad61fa9a4cc05b5e748e315c9709f66861e8756b227d6757d529846591189e19ee2b2d00002d"
+      },
+      "source": {
+        "path": "x86_64/release/gettext/gettext-0.22.5-1-src.tar.xz",
+        "size": 8483620,
+        "sha512": "101bf0971ec63c5a99fc1f78be0047417ce4bbbe6bee88596a27973cad07cbb7a89e466e3e996332ef9d99b3d38b3bede42e53ca544c5e3540f723ccb8621e04"
+      }
+    },
+    {
+      "name": "libk5crypto3",
+      "version": "1.15.2-2",
+      "install": {
+        "path": "x86_64/release/krb5/libk5crypto3/libk5crypto3-1.15.2-2.tar.xz",
+        "size": 73344,
+        "sha512": "249808d087f1a1ac7a5b117aaf499e173c9e404b224b9d9ff5a5fa1d2ace8b7c1185100bfa33174a82cbc250f376671d48b7d93d11924b5c4b524897841e2967"
+      },
+      "source": {
+        "path": "x86_64/release/krb5/krb5-1.15.2-2-src.tar.xz",
+        "size": 9488172,
+        "sha512": "388e966277d23f15e2687fdebc7a1d9f215780e26d9e69e9370a28e2ba499abf5335d5f6b89d2e44e702c993f49e1b44ee5af6552535d292fdd0f22609da09bd"
+      }
+    },
+    {
+      "name": "libkrb5_3",
+      "version": "1.15.2-2",
+      "install": {
+        "path": "x86_64/release/krb5/libkrb5_3/libkrb5_3-1.15.2-2.tar.xz",
+        "size": 236076,
+        "sha512": "639bb23f5bafc62fe6d36d44f1786445b949db5547dee66c73ec75c5d1d9d3444b8f326ffae811fb18fed3e85fead713362cf2c2488f880d3f5bc8ea087cee64"
+      },
+      "source": {
+        "path": "x86_64/release/krb5/krb5-1.15.2-2-src.tar.xz",
+        "size": 9488172,
+        "sha512": "388e966277d23f15e2687fdebc7a1d9f215780e26d9e69e9370a28e2ba499abf5335d5f6b89d2e44e702c993f49e1b44ee5af6552535d292fdd0f22609da09bd"
+      }
+    },
+    {
+      "name": "libkrb5support0",
+      "version": "1.15.2-2",
+      "install": {
+        "path": "x86_64/release/krb5/libkrb5support0/libkrb5support0-1.15.2-2.tar.xz",
+        "size": 14424,
+        "sha512": "93162fc8430153b054c77c1dea7d9df6be8422922a9ee6fd923b46797c466200d78e80cb4e17387dd18ed1631a7828a57169fdc743c7b2a7a270259aa586113d"
+      },
+      "source": {
+        "path": "x86_64/release/krb5/krb5-1.15.2-2-src.tar.xz",
+        "size": 9488172,
+        "sha512": "388e966277d23f15e2687fdebc7a1d9f215780e26d9e69e9370a28e2ba499abf5335d5f6b89d2e44e702c993f49e1b44ee5af6552535d292fdd0f22609da09bd"
+      }
+    },
+    {
+      "name": "libncursesw10",
+      "version": "6.5+20240427-1",
+      "install": {
+        "path": "x86_64/release/ncurses/libncursesw10/libncursesw10-6.5+20240427-1.tar.xz",
+        "size": 393928,
+        "sha512": "08102f7a7083cb5663fecc46d819f2ece4123444a8f94c42300f03f7eebd40395f556c44b22ab58bf57321b44d9b8fb8b19358e535c7500d36e52d48b05dcca8"
+      },
+      "source": {
+        "path": "x86_64/release/ncurses/ncurses-6.5+20240427-1-src.tar.xz",
+        "size": 3703872,
+        "sha512": "e16cffd412ae0b998553a162041b71a5fb20b89b36a1d2acc5de633a82430010de58439fddbd16bfba1679697659a43d3672b9a3f53e03353bd4ad22a7a8f09b"
+      }
+    },
+    {
+      "name": "libpixman1_0",
+      "version": "0.46.4-1",
+      "install": {
+        "path": "x86_64/release/pixman/libpixman1_0/libpixman1_0-0.46.4-1-x86_64.tar.xz",
+        "size": 244592,
+        "sha512": "f73ecd1e4cae4a7bd2319558210d53bc7eb9e228f30b774589fcb6f995b0c91158d5ffe9333056a8403776e3f77e3c950849459f99d43d5b21404cf2c9ca383a"
+      },
+      "source": {
+        "path": "x86_64/release/pixman/pixman-0.46.4-1-src.tar.xz",
+        "size": 663572,
+        "sha512": "e2f3c334c7dca889d80e1572a8c99e2481479b55fe1d44431263339739daa1d31338f094a9b0921a8feda4d2fd91b1b6b7dbff6a05c32722dcf5f69daeb0ee64"
+      }
+    },
+    {
+      "name": "libpng16",
+      "version": "1.6.59-1",
+      "install": {
+        "path": "x86_64/release/libpng/libpng16/libpng16-1.6.59-1-x86_64.tar.xz",
+        "size": 180120,
+        "sha512": "82c922cb908cb2a335e59a67f9b5fe6d2cb3a856c874a1f677042515211501a4caa9f4205bbdc8c495457401fc869854dac94230a2a9522d240298735b2d9c0d"
+      },
+      "source": {
+        "path": "src/release/libpng/libpng-1.6.59-1-src.tar.xz",
+        "size": 1602116,
+        "sha512": "2ab2a592736f47b019a2cf736e86c30192513ec6bf8140f69ce7522d163209ba06427a9bdd65334b9702c7e7c406c6bef4ac60546149a86f00c07e177ac26804"
+      }
+    },
+    {
+      "name": "libreadline7",
+      "version": "8.2-2",
+      "install": {
+        "path": "x86_64/release/readline/libreadline7/libreadline7-8.2-2.tar.xz",
+        "size": 113340,
+        "sha512": "1d27576cf49b056f35f90ad933e39c5d946bc271ddcd109daa98f95b97123b428256827889ff45ca8a76409cdb1afd0146e99c9b70150b302538356512acfe38"
+      },
+      "source": {
+        "path": "x86_64/release/readline/readline-8.2-2-src.tar.xz",
+        "size": 3046308,
+        "sha512": "ebedad14bf205cb9f5df0f5e4742f737e98e6bad5539996c36840d1c86d603877e0c3e4f9d0c9df9081b4c820c9b8c3224dbe8b45b9e7f5c97bc7973a35b3da4"
+      }
+    },
+    {
+      "name": "libtirpc3",
+      "version": "1.3.8-1",
+      "install": {
+        "path": "x86_64/release/libtirpc/libtirpc3/libtirpc3-1.3.8-1-x86_64.tar.xz",
+        "size": 63520,
+        "sha512": "cfcd68ef2f88cbfd956bed767893fa044a23327a808240a541db67390ba15ade139ddab9841b13e45e9f7be527db8c5d67ff8e461a50297a318d59dedf111611"
+      },
+      "source": {
+        "path": "src/release/libtirpc/libtirpc-1.3.8-1-src.tar.xz",
+        "size": 577024,
+        "sha512": "1f2d2e28791339fb3cb2bab100ed543f2c260908dbc3cfd6368c82117dd99632c898c1b72264cc1c84993bc2255c77e69e8c8cfb2011deef2b5e02f41131deb9"
+      }
+    },
+    {
+      "name": "libxcb-composite0",
+      "version": "1.17.0-2",
+      "install": {
+        "path": "x86_64/release/libxcb/libxcb-composite0/libxcb-composite0-1.17.0-2-x86_64.tar.xz",
+        "size": 2596,
+        "sha512": "1af15e5975541fc8b17d6a7aa64cab83241a6a869f68590499fc46e6a2eaf4dc9b1bf765ea5af39af2bb2276ac9d7ff15b879f0407dacf143109ea0049aa0ebe"
+      },
+      "source": {
+        "path": "x86_64/release/libxcb/libxcb-1.17.0-2-src.tar.xz",
+        "size": 458176,
+        "sha512": "1f558402b135b541b935a4b9a4e17b0d35b6d3360d41d221a12cd5b6b8059b4a717682df71494d09034f35173877fc0e45e0a7f3a4ea3eb08435a117bb74cf38"
+      }
+    },
+    {
+      "name": "libxcb-ewmh2",
+      "version": "0.4.2-1",
+      "install": {
+        "path": "x86_64/release/xcb-util-wm/libxcb-ewmh2/libxcb-ewmh2-0.4.2-1.tar.xz",
+        "size": 26336,
+        "sha512": "e58dec33c2572d26284116076d2ea53a830ad6deed52ede7542586d37ec56ccc076a90aeb424473799165bf682ad69cbf21aa48744a1de2c1fd1d38f76d7d2bb"
+      },
+      "source": {
+        "path": "x86_64/release/xcb-util-wm/xcb-util-wm-0.4.2-1-src.tar.xz",
+        "size": 287580,
+        "sha512": "3344e9bc17aaa0e829bf105266a1c5b8c1903cc31b705861bf32b657fa21402a4e91a61024fc65cf719e9fbe41245743378c1ffefe0e8ce1e5c3f178636eec6d"
+      }
+    },
+    {
+      "name": "libxcb-icccm4",
+      "version": "0.4.2-1",
+      "install": {
+        "path": "x86_64/release/xcb-util-wm/libxcb-icccm4/libxcb-icccm4-0.4.2-1.tar.xz",
+        "size": 4460,
+        "sha512": "aff20053f81fcb8578f88c0156b9336355c291a25bb0f32a4823a25d8c729b954305233a3cbe674402011922e6d4d9b28e1e2d03e2156940653896b59b7f08e5"
+      },
+      "source": {
+        "path": "x86_64/release/xcb-util-wm/xcb-util-wm-0.4.2-1-src.tar.xz",
+        "size": 287580,
+        "sha512": "3344e9bc17aaa0e829bf105266a1c5b8c1903cc31b705861bf32b657fa21402a4e91a61024fc65cf719e9fbe41245743378c1ffefe0e8ce1e5c3f178636eec6d"
+      }
+    },
+    {
+      "name": "libxcb-image0",
+      "version": "0.4.1-1",
+      "install": {
+        "path": "x86_64/release/xcb-util-image/libxcb-image0/libxcb-image0-0.4.1-1.tar.xz",
+        "size": 18908,
+        "sha512": "81f43167518f8b8936576878446196016caf90ea5493a1b984c23f4c70df80b07b782836dd971e23eb7663573880f3e94f635064c79d97ae81d26e341a97262f"
+      },
+      "source": {
+        "path": "x86_64/release/xcb-util-image/xcb-util-image-0.4.1-1-src.tar.xz",
+        "size": 291336,
+        "sha512": "284e46375cf27a8a52d6a4e3d17f32e8736ed5daf924430c5b23b4ee55b1ec9fb330d5835dbdb72a43782f241060e0e3aa78c9c2b77970d6fee84b4ff6ea5a20"
+      }
+    },
+    {
+      "name": "libxcb-shm0",
+      "version": "1.17.0-2",
+      "install": {
+        "path": "x86_64/release/libxcb/libxcb-shm0/libxcb-shm0-1.17.0-2-x86_64.tar.xz",
+        "size": 3016,
+        "sha512": "4ab8431c6bb4678fffd227808601688cd4b7374c6b4b5170d51a66018a10d1082e2d72a88e20c13dbf89b9e57015c9a3341e7fa35d62347fc5fba96ffa93a734"
+      },
+      "source": {
+        "path": "x86_64/release/libxcb/libxcb-1.17.0-2-src.tar.xz",
+        "size": 458176,
+        "sha512": "1f558402b135b541b935a4b9a4e17b0d35b6d3360d41d221a12cd5b6b8059b4a717682df71494d09034f35173877fc0e45e0a7f3a4ea3eb08435a117bb74cf38"
+      }
+    },
+    {
+      "name": "libxcb-util1",
+      "version": "0.4.1-1",
+      "install": {
+        "path": "x86_64/release/xcb-util/libxcb-util1/libxcb-util1-0.4.1-1.tar.xz",
+        "size": 19328,
+        "sha512": "68df4dc0f0f92f19f4f0638c142a9864bcbe05d2373d28269129e5ce2ea3f2a20b53b9be000c6d42069fea5f24afe37fdae67634f074dc5ea38b2d586c229766"
+      },
+      "source": {
+        "path": "x86_64/release/xcb-util/xcb-util-0.4.1-1-src.tar.xz",
+        "size": 269352,
+        "sha512": "6b1941092a8e1415cc0d7aff819f695d164b1240e4890aded7c6b516afd7a6c63a7d25920c62a5c0c38cb38f93a7152b7c9a527c88c9bc439da3b099727fd9f7"
+      }
+    },
+    {
+      "name": "libxcb-xfixes0",
+      "version": "1.17.0-2",
+      "install": {
+        "path": "x86_64/release/libxcb/libxcb-xfixes0/libxcb-xfixes0-1.17.0-2-x86_64.tar.xz",
+        "size": 5604,
+        "sha512": "998c8dbaed50308f66459879f85d3b74cc34b8b334ce362daea5fc8ae0ec3e5be6037a1ca1cffe38b31f45ed464860f73017cdaa5a2a2f78b3a59317df166d1f"
+      },
+      "source": {
+        "path": "x86_64/release/libxcb/libxcb-1.17.0-2-src.tar.xz",
+        "size": 458176,
+        "sha512": "1f558402b135b541b935a4b9a4e17b0d35b6d3360d41d221a12cd5b6b8059b4a717682df71494d09034f35173877fc0e45e0a7f3a4ea3eb08435a117bb74cf38"
+      }
+    },
+    {
+      "name": "libxcb1",
+      "version": "1.17.0-2",
+      "install": {
+        "path": "x86_64/release/libxcb/libxcb1/libxcb1-1.17.0-2-x86_64.tar.xz",
+        "size": 120640,
+        "sha512": "ac7136e434de09f641720a5f413b3483dc8f7feaca6ec9edbd52381df340747351c5d71cba84d25e57d30fc05a41fece2edc2734874b3c4c92bee4c9f6b969e7"
+      },
+      "source": {
+        "path": "x86_64/release/libxcb/libxcb-1.17.0-2-src.tar.xz",
+        "size": 458176,
+        "sha512": "1f558402b135b541b935a4b9a4e17b0d35b6d3360d41d221a12cd5b6b8059b4a717682df71494d09034f35173877fc0e45e0a7f3a4ea3eb08435a117bb74cf38"
+      }
+    },
+    {
+      "name": "libxkbfile1",
+      "version": "1.2.0-1",
+      "install": {
+        "path": "x86_64/release/libxkbfile/libxkbfile1/libxkbfile1-1.2.0-1-x86_64.tar.xz",
+        "size": 59608,
+        "sha512": "8acaaf72040694c2da18ceeb864b5d7f2ac2247340a347fe81adf658630c2197a37987ef8ae015558e106ba2df079d551258521e55b68d9b6a1c16e55926aabb"
+      },
+      "source": {
+        "path": "src/release/libxkbfile/libxkbfile-1.2.0-1-src.tar.xz",
+        "size": 59124,
+        "sha512": "21148fd181ef755b2d114b4250da749dad3939aff0e9b70a628780e6c3ad2dd5249ff8650225fefb8ebf455a4ae990dc2261b54e14ca126bffce71f58d9f24e8"
+      }
+    },
+    {
+      "name": "xkbcomp",
+      "version": "1.5.0-1",
+      "install": {
+        "path": "x86_64/release/xkbcomp/xkbcomp-1.5.0-1-x86_64.tar.xz",
+        "size": 109028,
+        "sha512": "60a7c9a9d22ab71eb7aa6a004ecaf4f5bb07916e3542a6d0cd128d1751f45b4e384a67834a6decc082a165e0495a356b08454903e1eec99df3e279414be305b9"
+      },
+      "source": {
+        "path": "src/release/xkbcomp/xkbcomp-1.5.0-1-src.tar.xz",
+        "size": 249540,
+        "sha512": "d104fd8dcefceaf99383dd4604db9d2f213f65d89c90df36a23ec9c73ada6c61781edb01f10e398045fd59cc8a2239f9e623f8345c5622381dda94f29db8cfdf"
+      }
+    },
+    {
+      "name": "xkeyboard-config",
+      "version": "2.46-1",
+      "install": {
+        "path": "noarch/release/xkeyboard-config/xkeyboard-config-2.46-1-noarch.tar.xz",
+        "size": 814908,
+        "sha512": "536f2fde5dd45c3a0ea9a513e5c9361ea2ed349b9be56d54388c57d2aa74fed4ce21443fa8ddc0af70d873f29897f68c717ade386012bce56ed8a6ab8447f3ab"
+      },
+      "source": {
+        "path": "src/release/xkeyboard-config/xkeyboard-config-2.46-1-src.tar.xz",
+        "size": 933016,
+        "sha512": "0d8aa0938e3e4bfaff145cd5212c339d5fffc1399f509c99cbdb1cd21bef4df4c339b5c67363f95275eea9a92f6c337c1473c551ff97e403464d48e7530f67d0"
+      }
+    },
+    {
+      "name": "xorg-server",
+      "version": "21.1.21-1",
+      "install": {
+        "path": "x86_64/release/xorg-server/xorg-server-21.1.21-1-x86_64.tar.xz",
+        "size": 1028760,
+        "sha512": "2a2521c4af9812bc43a57dd87baffb53d01b9b41c716174942511ac951ef9888baac07b8e1bcde48cd2e47f91106805057f482b0accc1bc99c20cc81208dea91"
+      },
+      "source": {
+        "path": "src/release/xorg-server/xorg-server-21.1.21-1-src.tar.xz",
+        "size": 3673148,
+        "sha512": "0aeb12e99541f0e346700ff4a94b09fd0448bbc53b0c567eefe675efef2a3e4aefb8081a539ade63543e0543517c01c1eca07e3c11365374f2181093259cccd7"
+      }
+    },
+    {
+      "name": "xorg-server-common",
+      "version": "21.1.21-1",
+      "install": {
+        "path": "x86_64/release/xorg-server/xorg-server-common/xorg-server-common-21.1.21-1-x86_64.tar.xz",
+        "size": 35980,
+        "sha512": "0a79849ca6ad49ac5737949e271eae3adee550e4110bd8376abeb7a914e674cb0fa73e25f1021cbe685dcd0d3c52730f2a4682888e85945bb94b2317d533dc5f"
+      },
+      "source": {
+        "path": "src/release/xorg-server/xorg-server-21.1.21-1-src.tar.xz",
+        "size": 3673148,
+        "sha512": "0aeb12e99541f0e346700ff4a94b09fd0448bbc53b0c567eefe675efef2a3e4aefb8081a539ade63543e0543517c01c1eca07e3c11365374f2181093259cccd7"
+      }
+    },
+    {
+      "name": "zlib0",
+      "version": "1.3.2-1",
+      "install": {
+        "path": "x86_64/release/zlib/zlib0/zlib0-1.3.2-1-x86_64.tar.zst",
+        "size": 46254,
+        "sha512": "d79ba6098cadf6bf2f32f35d9cd54729293c64b3c9daabb9d080f52861a19db71544d5710fdbd61ff45e7c2ae4eecb3f2e3b8a1e3bc05695b8cfe01c7639c53a"
+      },
+      "source": {
+        "path": "x86_64/release/zlib/zlib-1.3.2-1-src.tar.zst",
+        "size": 1321796,
+        "sha512": "10aa89718be99490ba9e76c19cf8e7e5cbb2a84c7510ea928c87c60279cb5ef0beb58def1049f427139e2b2024e4434ca32bdfbf7cd9a73ea7672684b2b3bcb9"
+      }
+    }
+  ]
+}

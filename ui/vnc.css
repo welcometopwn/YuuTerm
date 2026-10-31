@@ -1,0 +1,51 @@
+.vnc-surface {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #080808;
+  position: relative;
+  color: var(--muted);
+}
+.vnc-surface canvas {
+  /* Out of flow: the desktop size must never grow the pane it is fitted to. */
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  outline: none;
+  touch-action: none;
+  display: block;
+}
+.vnc-surface canvas:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.vnc-certificate {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 8px;
+  max-width: 560px;
+  font-size: 13px;
+}
+.vnc-certificate dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.vnc-certificate dt {
+  color: var(--muted);
+}
+.vnc-actions {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  z-index: 1;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px;
+  background: var(--surface);
+}

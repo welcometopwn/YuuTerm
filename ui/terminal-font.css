@@ -1,0 +1,32 @@
+@font-face {
+  font-family: "YuuTerm JetBrains Mono";
+  src: url("./assets/fonts/JetBrainsMonoNLNerdFontMono-Regular.woff2")
+    format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: "YuuTerm JetBrains Mono";
+  src: url("./assets/fonts/JetBrainsMonoNLNerdFontMono-Bold.woff2")
+    format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: "YuuTerm JetBrains Mono";
+  src: url("./assets/fonts/JetBrainsMonoNLNerdFontMono-Italic.woff2")
+    format("woff2");
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: "YuuTerm JetBrains Mono";
+  src: url("./assets/fonts/JetBrainsMonoNLNerdFontMono-BoldItalic.woff2")
+    format("woff2");
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+}

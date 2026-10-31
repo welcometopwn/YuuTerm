@@ -1,0 +1,37 @@
+{
+  "name": "yuuterm-ui",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "scripts": {
+    "test:ui": "node --test tests/*.test.ts",
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "desktop": "tauri dev --config crates/yuuterm-desktop/tauri.conf.json",
+    "installer:build": "pwsh -NoProfile -File scripts/Build-Installer.ps1",
+    "test:installer": "pwsh -NoProfile -File scripts/Test-Installer.ps1",
+    "desktop:build": "tauri build --config crates/yuuterm-desktop/tauri.conf.json --no-bundle"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.12.4",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/addon-search": "0.16.0",
+    "@xterm/addon-unicode11": "0.9.0",
+    "@xterm/addon-webgl": "0.19.0",
+    "@xterm/xterm": "6.0.0",
+    "lucide-react": "1.58.0",
+    "re2js": "2.8.7",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "prettier": "3.9.10",
+    "typescript": "7.0.2",
+    "vite": "8.3.4"
+  },
+  "license": "MIT"
+}

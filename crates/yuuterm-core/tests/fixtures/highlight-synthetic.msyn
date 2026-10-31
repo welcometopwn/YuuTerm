@@ -1,0 +1,12 @@
+; Synthetic syntax export: no user configuration or host data.
+[CustomSyntax]
+Name=YuuTerm synthetic rules
+UseRegex=1
+CaseSensitive=0
+Red=\berror\b
+Green=\bsuccess\b
+Blue=a{101}
+Yellow=(?<=x)y
+Underline=https?://
+Blinking=alert
+FutureProperty=private-fixture-value

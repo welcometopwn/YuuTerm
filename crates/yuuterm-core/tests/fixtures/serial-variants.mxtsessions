@@ -1,0 +1,10 @@
+; Synthetic SERIAL metadata only. Never connect these entries.
+[Bookmarks]
+Five=#131#8%99%9600%0%0%0%0%2%COM7 (Synthetic)#ignored
+Six=fixture-secret-command#131#8%99%19200%1%1%1%1%2%COM7 (Synthetic)#ignored
+Seven=#131#8%99%38400%2%0%2%2%2%COM7 (Synthetic)#ignored
+Eight=#131#8%99%115200%3%1%0%2%2%COM7 (Synthetic)#ignored
+Mark=#131#8%99%9600%3%0%3%0%2%COM7
+Space=#131#8%99%9600%3%0%4%0%2%COM7
+DsrDtr=#131#8%99%9600%3%0%0%3%2%COM7
+UnknownStop=#131#8%99%9600%3%2%0%0%2%COM7
