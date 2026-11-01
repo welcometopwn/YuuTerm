@@ -23,6 +23,7 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --features yuuterm-desktop/capture -- -D warnings
 cargo test --workspace
 npm run test:ui
+npm run test:downloads
 pwsh -NoProfile -File scripts/Build-Release.ps1
 ```
 
@@ -32,6 +33,10 @@ UI (`dist/`) when the Rust code compiles.
 `Build-Release.ps1` puts the installer, the portable ZIP, the source of the
 bundled X server and `SHA256SUMS.txt` into `target/distribution`. Publish all of
 them together; see [RELEASING.md](../RELEASING.md).
+
+X11 downloads use Windows `curl.exe` with connection and transfer deadlines,
+bounded retries and SHA-512 verification. Each package is logged; a stalled mirror
+fails with the package name instead of silently consuming the entire CI job.
 
 The GitHub Actions workflow runs these steps on every push to `main` and uploads
 the packages as build artifacts. It never publishes a release by itself.

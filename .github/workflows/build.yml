@@ -14,7 +14,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '26'
+          node-version: "26"
       - name: Install Rust tools
         run: rustup component add rustfmt clippy
       - run: npm ci
@@ -24,6 +24,14 @@ jobs:
       - run: cargo clippy --workspace --all-targets --features yuuterm-desktop/capture -- -D warnings
       - run: cargo test --workspace
       - run: npm run test:ui
+      - run: npm run test:downloads
+      - name: Cache verified X11 downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            target/x11-cache
+            target/x11-sources
+          key: ${{ runner.os }}-x11-${{ hashFiles('scripts/x11-runtime.json') }}
       - name: Build unsigned release
         shell: pwsh
         run: ./scripts/Build-Release.ps1
