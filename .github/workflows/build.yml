@@ -78,11 +78,16 @@ jobs:
             [[ -f "dist/$f" ]] || { echo "Missing dist/$f; the version in the sources must match $TAG"; exit 1; }
           done
           (cd dist && tr -d '\r' < SHA256SUMS.txt | sha256sum -c)
-      - name: Extract release notes
+      - name: Write release notes
         run: |
-          version="${TAG#v}"
-          awk -v h="## $version " 'index($0, h) == 1 {f = 1; next} /^## / {f = 0} f' CHANGELOG.md | sed '/./,$!d' > notes.md
-          [[ -s notes.md ]] || { echo "CHANGELOG.md has no section for $version"; exit 1; }
+          # GitHub lists the pull requests merged since the previous release and
+          # adds the compare link; the maintainer edits the draft before publishing.
+          changes="$(gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$TAG" --jq .body)"
+          notes="$(cat .github/release-notes.md)"
+          notes="${notes//'{{CHANGES}}'/$changes}"
+          notes="${notes//'{{TAG}}'/$TAG}"
+          notes="${notes//'{{RUN_URL}}'/$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID}"
+          printf '%s\n' "$notes" > notes.md
       - name: Create draft release
         run: |
           prerelease=()
