@@ -35,7 +35,7 @@ UI (`dist/`) when the Rust code compiles.
 
 `Build-Release.ps1` puts the installer, the portable ZIP, the source of the
 bundled X server and `SHA256SUMS.txt` into `target/distribution`. Publish all of
-them together; see [RELEASING.md](../RELEASING.md).
+them together; see [releasing.md](releasing.md).
 
 X11 downloads use Windows `curl.exe` with connection and transfer deadlines,
 bounded retries and SHA-512 verification. Each package is logged; a stalled mirror
