@@ -25,8 +25,10 @@ export async function checkSshPasswordEditor(
       select.value === "Password" &&
       document
         .querySelector("dialog[open]")!
-        .textContent!.includes("Credential prompt integration is pending"),
-    "SSH Password option explains the pending desktop credential hook",
+        .textContent!.includes(
+          "A Windows prompt asks for the password when connecting",
+        ),
+    "SSH Password option explains the Windows prompt at connect time",
   );
   const labels = Array.from(
     document.querySelectorAll("dialog[open] label"),

@@ -113,287 +113,329 @@ export function Appearance({
       <SettingsTabs
         prefix="settings"
         label="Settings sections"
-        tabs={["appearance", "highlighting", "statistics"]}
+        tabs={["appearance", "highlighting", "statistics", "about"]}
         value={tab}
         onChange={setTab}
       />
-      <div
-        role="tabpanel"
-        id="settings-panel-appearance"
-        aria-labelledby="settings-tab-appearance"
-        hidden={tab !== "appearance"}
-      >
-        <label>
-          Theme
-          <select
-            value={themeFor(draft.theme ?? "", draft.mocha).id}
-            onChange={(e) =>
-              setDraft((p) => ({
-                ...p,
-                theme: e.target.value,
-                mocha: e.target.value === "catppuccin-mocha",
-              }))
-            }
-          >
-            {themes.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Terminal font
-          <select
-            aria-label="Terminal font"
-            value={custom ? "custom" : draft.font_family}
-            onChange={(e) => {
-              const selected = e.target.value;
-              setCustom(selected === "custom");
-              if (selected !== "custom")
-                setDraft((p) => ({ ...p, font_family: selected }));
-            }}
-          >
-            {terminalFontChoices.map((name) => (
-              <option key={name} value={name}>
-                {name === "YuuTerm JetBrains Mono"
-                  ? "JetBrains Mono Nerd Font (bundled)"
-                  : name}
-              </option>
-            ))}
-            <option value="custom">Other installed font</option>
-          </select>
-        </label>
-        {custom && (
+      {/* All panels share one grid cell, so the dialog keeps the height of
+          the tallest section instead of jumping between tabs. */}
+      <div className="settings-panels">
+        <div
+          role="tabpanel"
+          id="settings-panel-appearance"
+          aria-labelledby="settings-tab-appearance"
+          hidden={tab !== "appearance"}
+        >
           <label>
-            Font family
-            <input
-              aria-label="Terminal font family"
-              value={draft.font_family}
-              maxLength={128}
-              onChange={(e) =>
-                setDraft((p) => ({ ...p, font_family: e.target.value }))
-              }
-            />
-          </label>
-        )}
-        <label>
-          Default terminal font size
-          <input
-            aria-label="Default terminal font size"
-            type="number"
-            min={8}
-            max={32}
-            value={draft.font_size}
-            onChange={(e) =>
-              setDraft((p) => ({ ...p, font_size: Number(e.target.value) }))
-            }
-          />
-        </label>
-        <label>
-          Terminal history (lines)
-          <input
-            aria-label="Terminal history lines"
-            type="number"
-            min={0}
-            max={10000}
-            step={100}
-            value={draft.scrollback_lines}
-            onChange={(e) =>
-              setDraft((p) => ({
-                ...p,
-                scrollback_lines: Number(e.target.value),
-              }))
-            }
-          />
-        </label>
-        <p className="muted">
-          Applies after Save to all terminals. Reducing the limit discards older
-          output. Zero keeps only the screen.
-        </p>
-      </div>
-      <div
-        role="tabpanel"
-        id="settings-panel-highlighting"
-        aria-labelledby="settings-tab-highlighting"
-        hidden={tab !== "highlighting"}
-      >
-        <fieldset className="highlight-settings">
-          <legend>Terminal highlighting</legend>
-          <label className="check-label">
-            <input
-              type="checkbox"
-              checked={draft.highlighting.enabled}
-              onChange={(e) => updateHighlight({ enabled: e.target.checked })}
-            />
-            Highlight terminal output
-          </label>
-          <div className="ip-highlight-rules">
-            {(["ipv4", "ipv6"] as const).map((version) => (
-              <div className="highlight-rule ip-highlight-rule" key={version}>
-                <label className="check-label">
-                  <input
-                    type="checkbox"
-                    aria-label={`Highlight ${version.toUpperCase().replace("IPV", "IPv")}`}
-                    checked={draft.highlighting[version]}
-                    onChange={(e) =>
-                      updateHighlight({ [version]: e.target.checked })
-                    }
-                  />
-                  {version === "ipv4" ? "IPv4 addresses" : "IPv6 addresses"}
-                </label>
-                <input
-                  type="color"
-                  aria-label={`${version === "ipv4" ? "IPv4" : "IPv6"} highlight color`}
-                  value={draft.highlighting[`${version}_color`]}
-                  onChange={(e) =>
-                    updateHighlight({ [`${version}_color`]: e.target.value })
-                  }
-                />
-              </div>
-            ))}
-          </div>
-          {draft.highlighting.rules.map((rule, index) => (
-            <div className="highlight-rule" key={index}>
-              <select
-                aria-label={`Rule ${index + 1} type`}
-                value={rule.regex ? "regex" : "words"}
-                onChange={(e) =>
-                  updateRule(index, { regex: e.target.value === "regex" })
-                }
-              >
-                <option value="words">Words</option>
-                <option value="regex">Regex</option>
-              </select>
-              <input
-                aria-label={`Rule ${index + 1} words`}
-                maxLength={rule.regex ? 128 : 1100}
-                value={rule.keywords}
-                placeholder={rule.regex ? "error|warn[0-9]+" : "error, failed"}
-                onChange={(e) =>
-                  updateRule(index, { keywords: e.target.value })
-                }
-              />
-              <input
-                type="color"
-                aria-label={`Rule ${index + 1} color`}
-                value={rule.color}
-                onChange={(e) => updateRule(index, { color: e.target.value })}
-              />
-              <button
-                aria-label={`Remove rule ${index + 1}`}
-                onClick={() =>
-                  updateHighlight({
-                    rules: draft.highlighting.rules.filter(
-                      (_, i) => i !== index,
-                    ),
-                  })
-                }
-              >
-                <X size={13} />
-              </button>
-            </div>
-          ))}
-          <button
-            disabled={draft.highlighting.rules.length >= 12}
-            onClick={() =>
-              updateHighlight({
-                rules: [
-                  ...draft.highlighting.rules,
-                  { keywords: "custom", color: "#cba6f7", regex: false },
-                ],
-              })
-            }
-          >
-            Add color rule
-          </button>
-          <HighlightImport
-            remaining={12 - draft.highlighting.rules.length}
-            onAdd={(rules) =>
-              updateHighlight({
-                rules: [...draft.highlighting.rules, ...rules],
-              })
-            }
-          />
-          <p className="hint">
-            Case insensitive. Regex patterns without /slashes/; lookaround and
-            backreferences are unsupported. Existing ANSI colors take priority.
-          </p>
-          <button type="button" onClick={() => setConfirmReset(true)}>
-            Reset highlighting to defaults
-          </button>
-          {confirmReset && (
-            <div className="reset-confirmation" role="alert">
-              <p>
-                Reset all highlighting rules, colors and switches to defaults?
-                Changes stay in this draft until Save.
-              </p>
-              <button type="button" onClick={() => setConfirmReset(false)}>
-                Keep my rules
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setDraft((p) => ({
-                    ...p,
-                    highlighting: defaultHighlighting(),
-                  }));
-                  setConfirmReset(false);
-                }}
-              >
-                Reset highlighting
-              </button>
-            </div>
-          )}
-        </fieldset>
-      </div>
-      <div
-        role="tabpanel"
-        id="settings-panel-statistics"
-        aria-labelledby="settings-tab-statistics"
-        hidden={tab !== "statistics"}
-      >
-        <fieldset className="statistics-settings">
-          <legend>Host statistics</legend>
-          <label className="check-label">
-            <input
-              type="checkbox"
-              aria-label="Show host statistics by default"
-              checked={draft.statistics.enabled}
-              onChange={(e) =>
-                setDraft((p) => ({
-                  ...p,
-                  statistics: { ...p.statistics, enabled: e.target.checked },
-                }))
-              }
-            />
-            Show host statistics by default
-          </label>
-          <p className="hint">
-            For SSH connections. Each session can override this setting.
-          </p>
-          <label>
-            Network rate unit
+            Theme
             <select
-              aria-label="Network rate unit"
-              value={draft.statistics.network_unit}
+              value={themeFor(draft.theme ?? "", draft.mocha).id}
               onChange={(e) =>
                 setDraft((p) => ({
                   ...p,
-                  statistics: {
-                    ...p.statistics,
-                    network_unit: e.target
-                      .value as Preferences["statistics"]["network_unit"],
-                  },
+                  theme: e.target.value,
+                  mocha: e.target.value === "catppuccin-mocha",
                 }))
               }
             >
-              <option value="Megabytes">MB/s — megabytes per second</option>
-              <option value="Kilobytes">kB/s — kilobytes per second</option>
-              <option value="Megabits">Mbit/s — megabits per second</option>
+              {themes.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
             </select>
           </label>
-        </fieldset>
+          <label>
+            Terminal font
+            <select
+              aria-label="Terminal font"
+              value={custom ? "custom" : draft.font_family}
+              onChange={(e) => {
+                const selected = e.target.value;
+                setCustom(selected === "custom");
+                if (selected !== "custom")
+                  setDraft((p) => ({ ...p, font_family: selected }));
+              }}
+            >
+              {terminalFontChoices.map((name) => (
+                <option key={name} value={name}>
+                  {name === "YuuTerm JetBrains Mono"
+                    ? "JetBrains Mono Nerd Font (bundled)"
+                    : name}
+                </option>
+              ))}
+              <option value="custom">Other installed font</option>
+            </select>
+          </label>
+          {custom && (
+            <label>
+              Font family
+              <input
+                aria-label="Terminal font family"
+                value={draft.font_family}
+                maxLength={128}
+                onChange={(e) =>
+                  setDraft((p) => ({ ...p, font_family: e.target.value }))
+                }
+              />
+            </label>
+          )}
+          <label>
+            Default terminal font size
+            <input
+              aria-label="Default terminal font size"
+              type="number"
+              min={8}
+              max={32}
+              value={draft.font_size}
+              onChange={(e) =>
+                setDraft((p) => ({ ...p, font_size: Number(e.target.value) }))
+              }
+            />
+          </label>
+          <label>
+            Terminal history (lines)
+            <input
+              aria-label="Terminal history lines"
+              type="number"
+              min={0}
+              max={10000}
+              step={100}
+              value={draft.scrollback_lines}
+              onChange={(e) =>
+                setDraft((p) => ({
+                  ...p,
+                  scrollback_lines: Number(e.target.value),
+                }))
+              }
+            />
+          </label>
+          <p className="muted">
+            Applies after Save to all terminals. Reducing the limit discards
+            older output. Zero keeps only the screen.
+          </p>
+        </div>
+        <div
+          role="tabpanel"
+          id="settings-panel-highlighting"
+          aria-labelledby="settings-tab-highlighting"
+          hidden={tab !== "highlighting"}
+        >
+          <fieldset className="highlight-settings">
+            <legend>Terminal highlighting</legend>
+            <label className="check-label">
+              <input
+                type="checkbox"
+                checked={draft.highlighting.enabled}
+                onChange={(e) => updateHighlight({ enabled: e.target.checked })}
+              />
+              Highlight terminal output
+            </label>
+            <div className="ip-highlight-rules">
+              {(["ipv4", "ipv6"] as const).map((version) => (
+                <div className="highlight-rule ip-highlight-rule" key={version}>
+                  <label className="check-label">
+                    <input
+                      type="checkbox"
+                      aria-label={`Highlight ${version.toUpperCase().replace("IPV", "IPv")}`}
+                      checked={draft.highlighting[version]}
+                      onChange={(e) =>
+                        updateHighlight({ [version]: e.target.checked })
+                      }
+                    />
+                    {version === "ipv4" ? "IPv4 addresses" : "IPv6 addresses"}
+                  </label>
+                  <input
+                    type="color"
+                    aria-label={`${version === "ipv4" ? "IPv4" : "IPv6"} highlight color`}
+                    value={draft.highlighting[`${version}_color`]}
+                    onChange={(e) =>
+                      updateHighlight({ [`${version}_color`]: e.target.value })
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+            {draft.highlighting.rules.map((rule, index) => (
+              <div className="highlight-rule" key={index}>
+                <select
+                  aria-label={`Rule ${index + 1} type`}
+                  value={rule.regex ? "regex" : "words"}
+                  onChange={(e) =>
+                    updateRule(index, { regex: e.target.value === "regex" })
+                  }
+                >
+                  <option value="words">Words</option>
+                  <option value="regex">Regex</option>
+                </select>
+                <input
+                  aria-label={`Rule ${index + 1} words`}
+                  maxLength={rule.regex ? 128 : 1100}
+                  value={rule.keywords}
+                  placeholder={
+                    rule.regex ? "error|warn[0-9]+" : "error, failed"
+                  }
+                  onChange={(e) =>
+                    updateRule(index, { keywords: e.target.value })
+                  }
+                />
+                <input
+                  type="color"
+                  aria-label={`Rule ${index + 1} color`}
+                  value={rule.color}
+                  onChange={(e) => updateRule(index, { color: e.target.value })}
+                />
+                <button
+                  aria-label={`Remove rule ${index + 1}`}
+                  onClick={() =>
+                    updateHighlight({
+                      rules: draft.highlighting.rules.filter(
+                        (_, i) => i !== index,
+                      ),
+                    })
+                  }
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            ))}
+            <button
+              disabled={draft.highlighting.rules.length >= 12}
+              onClick={() =>
+                updateHighlight({
+                  rules: [
+                    ...draft.highlighting.rules,
+                    { keywords: "custom", color: "#cba6f7", regex: false },
+                  ],
+                })
+              }
+            >
+              Add color rule
+            </button>
+            <HighlightImport
+              remaining={12 - draft.highlighting.rules.length}
+              onAdd={(rules) =>
+                updateHighlight({
+                  rules: [...draft.highlighting.rules, ...rules],
+                })
+              }
+            />
+            <p className="hint">
+              Case insensitive. Regex patterns without /slashes/; lookaround and
+              backreferences are unsupported. Existing ANSI colors take
+              priority.
+            </p>
+            <button type="button" onClick={() => setConfirmReset(true)}>
+              Reset highlighting to defaults
+            </button>
+            {confirmReset && (
+              <div className="reset-confirmation" role="alert">
+                <p>
+                  Reset all highlighting rules, colors and switches to defaults?
+                  Changes stay in this draft until Save.
+                </p>
+                <button type="button" onClick={() => setConfirmReset(false)}>
+                  Keep my rules
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDraft((p) => ({
+                      ...p,
+                      highlighting: defaultHighlighting(),
+                    }));
+                    setConfirmReset(false);
+                  }}
+                >
+                  Reset highlighting
+                </button>
+              </div>
+            )}
+          </fieldset>
+        </div>
+        <div
+          role="tabpanel"
+          id="settings-panel-statistics"
+          aria-labelledby="settings-tab-statistics"
+          hidden={tab !== "statistics"}
+        >
+          <fieldset className="statistics-settings">
+            <legend>Host statistics</legend>
+            <label className="check-label">
+              <input
+                type="checkbox"
+                aria-label="Show host statistics by default"
+                checked={draft.statistics.enabled}
+                onChange={(e) =>
+                  setDraft((p) => ({
+                    ...p,
+                    statistics: { ...p.statistics, enabled: e.target.checked },
+                  }))
+                }
+              />
+              Show host statistics by default
+            </label>
+            <p className="hint">
+              For SSH connections. Each session can override this setting.
+            </p>
+            <label>
+              Network rate unit
+              <select
+                aria-label="Network rate unit"
+                value={draft.statistics.network_unit}
+                onChange={(e) =>
+                  setDraft((p) => ({
+                    ...p,
+                    statistics: {
+                      ...p.statistics,
+                      network_unit: e.target
+                        .value as Preferences["statistics"]["network_unit"],
+                    },
+                  }))
+                }
+              >
+                <option value="Megabytes">MB/s — megabytes per second</option>
+                <option value="Kilobytes">kB/s — kilobytes per second</option>
+                <option value="Megabits">Mbit/s — megabits per second</option>
+              </select>
+            </label>
+          </fieldset>
+        </div>
+        <div
+          role="tabpanel"
+          id="settings-panel-about"
+          aria-labelledby="settings-tab-about"
+          className="about-panel"
+          hidden={tab !== "about"}
+        >
+          <p>
+            Terminal and remote session manager for Windows: SSH with a file
+            browser, RDP, VNC, Telnet, serial ports and X11 forwarding.
+          </p>
+          <dl>
+            <dt>Version</dt>
+            <dd>{__YUUTERM_VERSION__}</dd>
+            <dt>Build</dt>
+            <dd>{__YUUTERM_BUILD__}</dd>
+            <dt>License</dt>
+            <dd>MIT</dd>
+            <dt>Copyright</dt>
+            <dd>© 2026 welcometopwn</dd>
+            <dt>Project</dt>
+            <dd>
+              <button
+                className="link-button"
+                onClick={() =>
+                  void invoke("open_project_page").catch((e) =>
+                    setProblem(String(e)),
+                  )
+                }
+              >
+                github.com/welcometopwn/yuuterm
+              </button>
+            </dd>
+          </dl>
+        </div>
       </div>
       {(problem || issues.length > 0) && (
         <p className="appearance-error" role="alert">

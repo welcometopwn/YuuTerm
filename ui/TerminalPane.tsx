@@ -19,7 +19,11 @@ import { TelnetLineInput } from "./TelnetLineInput";
 import { fixtureTerminals } from "./fixture-terminals";
 import "@xterm/xterm/css/xterm.css";
 import { requiresPasteConfirmation, layoutForKey } from "./input-policy";
-import { fontStack, terminalFontsReady } from "./terminal-font";
+import {
+  fontStack,
+  loadTerminalFont,
+  terminalFontsReady,
+} from "./terminal-font";
 import { ContextMenu, type MenuState } from "./ContextMenu";
 
 interface Props {
@@ -114,7 +118,10 @@ export function TerminalPane(props: Props) {
   const refit = useRef<() => void>(() => {});
   useEffect(() => {
     let mounted = true;
-    void terminalFontsReady.then((loaded) => {
+    void Promise.all([
+      terminalFontsReady,
+      loadTerminalFont(current.current.fontFamily),
+    ]).then(([loaded]) => {
       if (!mounted) return;
       if (!loaded)
         current.current.onError(
@@ -473,10 +480,14 @@ export function TerminalPane(props: Props) {
     }
   }, [props.fontSize]);
   useEffect(() => {
-    if (terminal.current) {
-      terminal.current.options.fontFamily = fontStack(props.fontFamily);
-      refit.current();
-    }
+    const family = props.fontFamily;
+    void loadTerminalFont(family).then(() => {
+      // Skip a stale load when the font changed again meanwhile.
+      if (terminal.current && current.current.fontFamily === family) {
+        terminal.current.options.fontFamily = fontStack(family);
+        refit.current();
+      }
+    });
   }, [props.fontFamily]);
   useEffect(() => {
     if (terminal.current)

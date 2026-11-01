@@ -18,6 +18,7 @@ mod log_rotation;
 mod moba_icons;
 mod open_with;
 mod output_log;
+mod project_page;
 mod rdp;
 mod rdp_cert;
 mod rdp_events;
@@ -1273,6 +1274,7 @@ fn capture_scope(window: WebviewWindow, state: State<Backend>) -> Result<String,
             | "performance"
             | "pollwait"
             | "icons"
+            | "about"
             | "qol"
             | "vnc"
             | "rdp"
@@ -1947,6 +1949,15 @@ fn backend() -> Result<Backend, Box<dyn std::error::Error>> {
     })
 }
 
+/// Marks every build not made by GitHub Actions, so local executables are
+/// never mistaken for published releases in the taskbar.
+fn window_title() -> &'static str {
+    match option_env!("GITHUB_ACTIONS") {
+        Some("true") => "YuuTerm",
+        _ => "YuuTerm (Dev)",
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() == 3 && args[1] == rdp_keys::HELPER_ARG {
@@ -1977,7 +1988,7 @@ fn main() {
                 _ => builder,
             };
             let window = builder
-                .title("YuuTerm")
+                .title(window_title())
                 .decorations(false)
                 .shadow(true)
                 .inner_size(1280.0, 820.0)
@@ -2066,6 +2077,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            project_page::open_project_page,
             change_group,
             bootstrap,
             vnc::vnc_open,

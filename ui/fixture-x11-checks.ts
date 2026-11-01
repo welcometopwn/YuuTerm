@@ -35,7 +35,7 @@ export async function checkX11Settings(
       document.querySelector(".x11-settings details small")?.textContent ===
         probe.message &&
       document.querySelector(".x11-settings [role=status]")?.textContent ===
-        "X11 is unavailable. Check the setup details below.",
+        "X11 is unavailable. Check the details below.",
     "Native SSH editor explains unavailable X11 and refuses enabling forwarding",
   );
   checkbox()!.click();
