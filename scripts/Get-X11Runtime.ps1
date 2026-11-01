@@ -1,30 +1,17 @@
-# Bundled X server: assembles the Cygwin/X runtime YuuTerm starts on demand for X11
-# forwarding (docs/x11-forwarding.md). Downloads the pinned Cygwin packages listed in
-# scripts/x11-runtime.json, verifies each SHA-512 from the signed setup index, extracts
-# only the files XWin needs and writes target/x11-runtime/x11 with license texts,
-# source references and a SHA-256 manifest. -Release also copies it next to
-# target/release/yuuterm-desktop.exe; -Sources downloads the matching source archives
-# to target/x11-sources for publication with a release.
+# Assemble the pinned Cygwin/X runtime with licenses and a file manifest.
+# -Sources also fetches the corresponding sources required for redistribution.
 param([switch]$Release, [switch]$Sources)
 $ErrorActionPreference = 'Stop'
+Import-Module (Join-Path $PSScriptRoot 'PinnedDownload.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'ArchiveTools.psm1') -Force
 $root = Split-Path $PSScriptRoot -Parent
 $pin = Get-Content (Join-Path $PSScriptRoot 'x11-runtime.json') -Raw | ConvertFrom-Json
 $cache = Join-Path $root 'target/x11-cache'
 $out = Join-Path $root 'target/x11-runtime/x11'
 $work = Join-Path $root ('target/x11-work-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
-$tar = Join-Path $env:SystemRoot 'System32/tar.exe'
 
 function Get-Pinned($item, $directory) {
-    New-Item -ItemType Directory -Force $directory | Out-Null
-    $file = Join-Path $directory (Split-Path $item.path -Leaf)
-    if (-not (Test-Path $file) -or (Get-FileHash $file -Algorithm SHA512).Hash -ne $item.sha512) {
-        Invoke-WebRequest -Uri "$($pin.mirror)/$($item.path)" -OutFile $file -UseBasicParsing
-    }
-    if ((Get-FileHash $file -Algorithm SHA512).Hash -ne $item.sha512) {
-        Remove-Item -LiteralPath $file
-        throw "SHA-512 mismatch for $($item.path)"
-    }
-    $file
+    Get-PinnedFile -Mirror $pin.mirror -Item $item -Directory $directory
 }
 
 try {
@@ -32,19 +19,25 @@ try {
     New-Item -ItemType Directory -Force $extracted | Out-Null
     $links = @()
     foreach ($package in $pin.packages) {
+        Write-Host "[X11] Runtime package: $($package.name) $($package.version)"
         $archive = Get-Pinned $package.install $cache
-        # Windows tar cannot create the archives' symlinks; they are resolved below.
-        & $tar -xf $archive -C $extracted 2>$null
-        $links += & $tar -tvf $archive | Where-Object { $_ -match ' -> ' } | ForEach-Object {
-            if ($_ -match '\s(\S+) -> (\S+)$') { [pscustomobject]@{ Name = $Matches[1]; Target = $Matches[2] } }
-        }
+        $links += @(Expand-PinnedArchive -Archive $archive -Directory $extracted)
     }
+    Write-Host "[X11] Resolving $($links.Count) archive links as regular files"
     foreach ($link in $links) {
-        $target = if ($link.Target.StartsWith('/')) { $link.Target.TrimStart('/') } else { "$(Split-Path $link.Name -Parent)/$($link.Target)" }
+        $target = if ($link.HardLink -or $link.Target.StartsWith('/')) { $link.Target.TrimStart('/') } else { "$(Split-Path $link.Name -Parent)/$($link.Target)" }
         $source = Join-Path $extracted $target
         $destination = Join-Path $extracted $link.Name
+        $prefix = [IO.Path]::GetFullPath($extracted) + [IO.Path]::DirectorySeparatorChar
+        foreach ($path in @($source, $destination)) {
+            if (-not [IO.Path]::GetFullPath($path).StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+                throw 'Archive link escapes the extraction directory'
+            }
+        }
         if (-not (Test-Path $destination) -and (Test-Path $source -PathType Leaf)) { Copy-Item $source $destination }
     }
+
+    Write-Host '[X11] Assembling runtime, licenses and file manifest'
 
     if (Test-Path $out) { Remove-Item -LiteralPath $out -Recurse -Force }
     $bin = New-Item -ItemType Directory -Force (Join-Path $out 'bin')
@@ -90,8 +83,13 @@ try {
         Copy-Item $out $installed -Recurse
     }
     if ($Sources) {
-        foreach ($package in $pin.packages) { $null = Get-Pinned $package.source (Join-Path $root 'target/x11-sources') }
+        Write-Host '[X11] Preparing matching source archives'
+        foreach ($package in $pin.packages) {
+            Write-Host "[X11] Source package: $($package.name) $($package.version)"
+            $null = Get-Pinned $package.source (Join-Path $root 'target/x11-sources')
+        }
     }
+    Write-Host "[X11] Complete: $($files.Count) runtime files"
     [pscustomobject]@{
         Runtime = $out; Files = $files.Count
         SizeMB = [math]::Round(((Get-ChildItem $out -Recurse -File | Measure-Object Length -Sum).Sum / 1MB), 1)
