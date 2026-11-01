@@ -13,6 +13,8 @@ function powershell(script) {
       "pwsh",
       [
         "-NoProfile",
+        "-OutputFormat",
+        "Text",
         "-EncodedCommand",
         Buffer.from(
           `$ErrorActionPreference='Stop'; Import-Module ${quote(module)} -Force; ${script}`,

@@ -37,21 +37,14 @@ function Expand-PinnedArchive {
     param(
         [Parameter(Mandatory)][string]$Archive,
         [Parameter(Mandatory)][string]$Directory,
-        [string]$TarPath = "$env:SystemRoot/System32/tar.exe",
+        [string]$PythonPath = (Get-Command python.exe -ErrorAction Stop).Source,
         [ValidateRange(1, 300)][int]$TimeoutSeconds = 60
     )
     $name = Split-Path $Archive -Leaf
-    Write-Host "[X11] Listing: $name"
-    $listing = Invoke-ArchiveProcess -FilePath $TarPath -ArgumentList @('-tvf', $Archive) -TimeoutSeconds $TimeoutSeconds
-    $links = @($listing -split '\r?\n' | ForEach-Object {
-        if ($_ -match '\s(?<name>\S+) (?<kind>->|link to) (?<target>\S+)$') {
-            [pscustomobject]@{Name=$Matches.name;Target=$Matches.target;HardLink=($Matches.kind -eq 'link to')}
-        }
-    })
-    $arguments = @('-xf', $Archive, '-C', $Directory, '--no-same-owner', '--no-same-permissions')
-    foreach ($link in $links) { $arguments += @('--exclude', $link.Name) }
-    Write-Host "[X11] Extracting regular files: $name ($($links.Count) links deferred)"
-    $null = Invoke-ArchiveProcess -FilePath $TarPath -ArgumentList $arguments -TimeoutSeconds $TimeoutSeconds
+    Write-Host "[X11] Extracting regular files: $name"
+    $arguments = @((Join-Path $PSScriptRoot 'extract-pinned-archive.py'), $Archive, $Directory)
+    $output = Invoke-ArchiveProcess -FilePath $PythonPath -ArgumentList $arguments -TimeoutSeconds $TimeoutSeconds
+    $links = @($output | ConvertFrom-Json)
     Write-Host "[X11] Extracted: $name"
     return $links
 }

@@ -9,7 +9,6 @@ $pin = Get-Content (Join-Path $PSScriptRoot 'x11-runtime.json') -Raw | ConvertFr
 $cache = Join-Path $root 'target/x11-cache'
 $out = Join-Path $root 'target/x11-runtime/x11'
 $work = Join-Path $root ('target/x11-work-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
-$tar = Join-Path $env:SystemRoot 'System32/tar.exe'
 
 function Get-Pinned($item, $directory) {
     Get-PinnedFile -Mirror $pin.mirror -Item $item -Directory $directory
@@ -22,7 +21,7 @@ try {
     foreach ($package in $pin.packages) {
         Write-Host "[X11] Runtime package: $($package.name) $($package.version)"
         $archive = Get-Pinned $package.install $cache
-        $links += @(Expand-PinnedArchive -Archive $archive -Directory $extracted -TarPath $tar)
+        $links += @(Expand-PinnedArchive -Archive $archive -Directory $extracted)
     }
     Write-Host "[X11] Resolving $($links.Count) archive links as regular files"
     foreach ($link in $links) {

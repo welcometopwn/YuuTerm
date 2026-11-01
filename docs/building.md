@@ -5,6 +5,8 @@ Node.js (23.6 or later), the Visual Studio C++ Build Tools (desktop workload and
 Windows SDK) and WebView2. Builds are tested on Windows 11. The Rust version is
 pinned in `rust-toolchain.toml`, and the lockfiles are checked in.
 
+Packaging the bundled X server also requires Python 3.14 or later.
+
 To build the app:
 
 ```powershell

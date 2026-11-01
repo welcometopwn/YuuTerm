@@ -44,6 +44,8 @@ function download(mirror, file, directory, checksum = digest, retries = 0) {
       "pwsh",
       [
         "-NoProfile",
+        "-OutputFormat",
+        "Text",
         "-EncodedCommand",
         Buffer.from(script, "utf16le").toString("base64"),
       ],

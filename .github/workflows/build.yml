@@ -17,6 +17,9 @@ jobs:
           node-version: "26"
       - name: Install Rust tools
         run: rustup component add rustfmt clippy
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
       - run: npm ci
       # Tauri embeds the built UI (dist/) at compile time, so build it before clippy/tests.
       - run: npm run build
