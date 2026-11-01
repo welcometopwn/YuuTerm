@@ -22,3 +22,11 @@ Converted without subsetting or glyph edits with fonttools 4.60.1 / brotli 1.2.0
 Every converted face's cmap was compared with its TTF source; U+E0B0/U+E0B2
 Powerline separators, U+F07B folder, U+F120 terminal and U+F126 branch are present.
 Four faces add approximately 4.1 MiB to the frontend assets.
+
+## Additional programming fonts
+
+Fira Code, Source Code Pro, IBM Plex Mono, Roboto Mono and Iosevka come from the
+pinned `@fontsource/*` npm packages (SIL Open Font License 1.1) and are bundled
+as WOFF2 by Vite; each is loaded only when selected. Their license texts are in
+`public/licenses/font-*.txt`. Fira Code has no italic face; italics are
+synthesized.

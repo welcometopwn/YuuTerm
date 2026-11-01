@@ -1,7 +1,7 @@
 {
   "name": "yuuterm-ui",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "scripts": {
     "test:ui": "node --test tests/*.test.ts",
@@ -15,19 +15,24 @@
     "desktop:build": "tauri build --config crates/yuuterm-desktop/tauri.conf.json --no-bundle"
   },
   "dependencies": {
+    "@fontsource/fira-code": "5.3.0",
+    "@fontsource/ibm-plex-mono": "5.3.0",
+    "@fontsource/iosevka": "5.3.0",
+    "@fontsource/roboto-mono": "5.3.0",
+    "@fontsource/source-code-pro": "5.3.1",
     "@tauri-apps/api": "2.12.4",
     "@xterm/addon-fit": "0.11.0",
     "@xterm/addon-search": "0.16.0",
     "@xterm/addon-unicode11": "0.9.0",
     "@xterm/addon-webgl": "0.19.0",
     "@xterm/xterm": "6.0.0",
-    "lucide-react": "1.58.0",
-    "re2js": "2.8.7",
+    "lucide-react": "1.64.0",
+    "re2js": "2.9.1",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "2.12.3",
+    "@tauri-apps/cli": "2.12.4",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.2",

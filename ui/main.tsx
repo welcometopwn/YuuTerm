@@ -503,6 +503,7 @@ function App() {
         .catch(error);
     }
   }, [fixture, fixtureScope, lives, prefs.profiles]);
+  const isOpenTab = (id: number) => open.includes(id);
   const select = (id: number) => {
     setFocusRequest((n) => n + 1);
     setOpen((o) => (o.includes(id) ? o : [...o, id]));
@@ -1121,6 +1122,9 @@ function App() {
         <div className="brand" data-tauri-drag-region>
           <TerminalIcon size={19} />
           <strong>YuuTerm</strong>
+          {__YUUTERM_DEV_BUILD__ && (
+            <span className="dev-build">{__YUUTERM_DEV_BUILD__}</span>
+          )}
         </div>
         <WindowControls />
       </header>
@@ -1323,7 +1327,13 @@ function App() {
                                     },
                                   ),
                                 );
-                                if (!e.ctrlKey && !e.metaKey && !e.shiftKey)
+                                // Single click never opens a tab; double-click connects.
+                                if (
+                                  !e.ctrlKey &&
+                                  !e.metaKey &&
+                                  !e.shiftKey &&
+                                  isOpenTab(p.id)
+                                )
                                   select(p.id);
                               }}
                               onDoubleClick={(e) => {
@@ -1373,7 +1383,10 @@ function App() {
               )}
             </div>
             <footer className="sessions-footer">
-              {savedCount} saved {savedCount === 1 ? "session" : "sessions"}
+              <span>
+                {savedCount} saved {savedCount === 1 ? "session" : "sessions"}
+              </span>
+              <span className="app-version">v{__YUUTERM_VERSION__}</span>
             </footer>
           </>
         ) : ["Telnet", "Serial", "Rdp", "Vnc"].includes(

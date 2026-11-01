@@ -262,6 +262,13 @@ export async function checkFixture(ids: number[]) {
       document.documentElement.dataset.fixtureChecks = "passed";
       return;
     }
+    if (scope === "about") {
+      const { checkAbout } = await import("./fixture-about-checks");
+      await checkAbout(until);
+      await invoke("capture_report", { checks, passed: true });
+      document.documentElement.dataset.fixtureChecks = "passed";
+      return;
+    }
     if (scope === "icons") {
       const { checkIcons } = await import("./fixture-icons-checks");
       await checkIcons(ids, until, checks);
@@ -1117,12 +1124,11 @@ export async function checkFixture(ids: number[]) {
     copy.click();
     await until(
       () =>
-        !!document.querySelector('section[data-profile-id="5"]') &&
-        !document
-          .querySelector('section[data-profile-id="5"]')
-          ?.getAttribute("data-live-id") &&
+        copy.closest(".session-row")?.getAttribute("aria-selected") ===
+          "true" &&
+        !document.querySelector('section[data-profile-id="5"]') &&
         document.querySelectorAll("section[data-live-id]").length === 4,
-      "Single click opens the saved profile without connecting",
+      "Single click selects the saved profile without opening a tab",
     );
     copy.dispatchEvent(
       new MouseEvent("dblclick", { bubbles: true, cancelable: true }),
@@ -1211,15 +1217,16 @@ export async function checkFixture(ids: number[]) {
           ?.includes("Debian GNU/Linux 13") === true &&
         document.querySelector(".stat-host")?.textContent === "fixture-host" &&
         document.querySelector(".stat-uptime")?.textContent === "3d 0h" &&
-        document
+        !!document
           .querySelector(".session-statistics")
-          ?.previousElementSibling?.classList.contains("terminal-shell") ===
-          true,
+          ?.previousElementSibling?.matches(
+            ".terminal-shell, .rdp-split:has(> .terminal-shell)",
+          ),
       "Bottom statistics show hostname, OS/kernel hover details and three-day uptime",
     );
     await until(
       () =>
-        !document.querySelector(".workspace-bar, .view-label, footer") &&
+        !document.querySelector(".view-label, .main footer") &&
         !document.body.textContent?.includes("Connection metadata only") &&
         document.querySelector(".pane-title")?.textContent?.trim() ===
           "Connected",
@@ -1725,8 +1732,8 @@ async function checkStatisticsSettings(
     () =>
       field("Show host statistics by default").checked &&
       field("Network rate unit").value === "Megabytes" &&
-      document.querySelectorAll('[role="tab"]').length === 3,
-    "Global Settings has three sections, statistics enabled by default and MB/s selected",
+      document.querySelectorAll('[role="tab"]').length === 4,
+    "Global Settings has four sections, statistics enabled by default and MB/s selected",
   );
   unit("Kilobytes");
   await until(

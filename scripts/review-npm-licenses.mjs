@@ -1,6 +1,6 @@
 // Exact reviewed SPDX expressions for this locked graph; unknowns fail closed.
 import fs from "node:fs";
-const allowed = new Set(["MIT", "Apache-2.0", "Apache-2.0 OR MIT", "BSD-2-Clause", "BSD-3-Clause", "ISC", "0BSD", "MPL-2.0", "(MIT OR CC0-1.0)", "(MIT AND Zlib)"]);
+const allowed = new Set(["MIT", "Apache-2.0", "Apache-2.0 OR MIT", "BSD-2-Clause", "BSD-3-Clause", "ISC", "0BSD", "MPL-2.0", "(MIT OR CC0-1.0)", "(MIT AND Zlib)", "OFL-1.1"]);
 const lock = JSON.parse(fs.readFileSync("package-lock.json", "utf8"));
 const packages = [], skipped = [], findings = [];
 for (const [path, metadata] of Object.entries(lock.packages)) {

@@ -7,10 +7,14 @@ license texts, and the bundled X server's `x11/licenses` and `x11/SOURCES.txt`.
 The bundled Cygwin/X runtime is distributed unmodified. Cygwin's API library uses
 LGPL-3.0-or-later; other runtime packages use their respective licenses, including
 GPL licenses. Matching source archives are distributed alongside release binaries
-in `YuuTerm-0.2.1-x11-sources.zip`. Preserve these sources and notices when redistributing.
+in `YuuTerm-<version>-x11-sources.zip`. Preserve these sources and notices when redistributing.
 
 The bundled JetBrains Mono Nerd Font uses the SIL Open Font License; its license
 text is included in the dependency bundle and in `ui/assets/fonts/OFL.txt`.
+
+The optional terminal fonts Fira Code, Source Code Pro, IBM Plex Mono, Roboto Mono
+and Iosevka are bundled from Fontsource packages and also use the SIL Open Font
+License; their license texts ship in the application under `licenses/font-*.txt`.
 
 The app-local Microsoft Visual C++ Runtime remains subject to Microsoft's runtime
 redistribution terms. WebView2 and the Windows Remote Desktop control are Microsoft

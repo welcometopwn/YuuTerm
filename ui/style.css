@@ -161,6 +161,13 @@ small,
 .brand svg {
   color: var(--accent);
 }
+.dev-build {
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  font-size: 11px;
+  color: var(--muted);
+}
 .top-actions {
   margin-left: auto;
   display: flex;
@@ -369,11 +376,31 @@ small,
   padding: 0 6px;
 }
 .sessions-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
   padding: 9px 14px;
   border-top: 1px solid var(--line);
   color: var(--muted);
   font-size: 12px;
   flex-shrink: 0;
+}
+.app-version {
+  opacity: 0.7;
+  user-select: text;
+}
+.about-panel dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 12px 0;
+}
+.about-panel dt {
+  color: var(--muted);
+}
+.about-panel dd {
+  margin: 0;
+  user-select: text;
 }
 .pane-connections {
   display: flex;
@@ -1703,21 +1730,53 @@ dialog pre {
   display: flex;
   gap: 4px;
   margin-bottom: 20px;
-  border-bottom: 1px solid var(--line);
+  padding: 4px;
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 4px;
 }
 .settings-tabs button {
-  border: 0;
-  border-radius: 0;
+  flex: 1;
+  border: 1px solid transparent;
+  border-radius: 3px;
   background: transparent;
-  border-bottom: 2px solid transparent;
-  padding: 9px 12px;
+  color: var(--muted);
+  padding: 7px 12px;
+}
+.settings-tabs button:hover {
+  background: var(--control);
+  color: var(--text);
 }
 .settings-tabs button[aria-selected="true"] {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
+  background: var(--primary);
+  border-color: var(--primary-line);
+  color: var(--text);
 }
 [role="tabpanel"][hidden] {
   display: none;
+}
+.settings-panels {
+  display: grid;
+}
+/* Hidden panels still take part in the layout (invisible and inert), so the
+   shared cell is as tall as the largest section. */
+.settings-panels > [role="tabpanel"] {
+  grid-area: 1 / 1;
+}
+.settings-panels > [role="tabpanel"][hidden] {
+  display: block;
+  visibility: hidden;
+}
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  text-decoration: underline;
+}
+.link-button:hover {
+  background: none;
+  color: var(--text);
 }
 .statistics-settings,
 .session-statistics-settings {
