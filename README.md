@@ -33,11 +33,6 @@ npm run desktop:build
 Details are in [docs/building.md](docs/building.md). See also
 [SECURITY.md](SECURITY.md) and the [third-party licenses](THIRD_PARTY_NOTICES.md).
 
-## Code signing policy
-
-Releases are currently unsigned. I'm planning to apply to the SignPath
-Foundation for free code signing; see the [code signing policy](docs/code-signing.md).
-
 ## License
 
 [MIT](LICENSE), © 2026 welcometopwn

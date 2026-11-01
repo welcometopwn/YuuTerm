@@ -53,8 +53,9 @@ impl server::Handler for SshFixture {
     async fn auth_publickey_offered(
         &mut self,
         user: &str,
-        key: &PublicKey,
+        offer: server::PublicKeyOffer<'_>,
     ) -> anyhow::Result<server::Auth> {
+        let key = offer.public_key;
         self.offers.lock().unwrap().push(
             key.fingerprint(russh::keys::ssh_key::HashAlg::Sha256)
                 .to_string(),
@@ -68,8 +69,9 @@ impl server::Handler for SshFixture {
     async fn auth_publickey(
         &mut self,
         user: &str,
-        key: &PublicKey,
+        verified: server::VerifiedPublicKey<'_>,
     ) -> anyhow::Result<server::Auth> {
+        let key = verified.public_key;
         if user == "fixture" && key == &self.key {
             self.authenticated.fetch_add(1, Ordering::SeqCst);
             Ok(server::Auth::Accept)

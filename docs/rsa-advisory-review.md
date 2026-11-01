@@ -1,5 +1,19 @@
 # RSA advisory exposure review
 
+Security maintenance recheck, 1 November 2026: upgraded russh to 0.65.0.
+The crate archives match Cargo checksums. The rsa and ssh-key versions/checksums
+and YuuTerm authentication source hash are unchanged. Upstream `src/helpers.rs`,
+including RSA signer dispatch, is byte-identical to 0.64.1. The key parser adds
+a certificate nesting limit, without changing private-key signing. The client
+authentication diff adds recovery after an external signer fails and an optional
+session-binding API; it does not introduce RSA ciphertext decryption or replace
+the private-key-file signer. The reverse RSA consumers remain russh and ssh-key.
+The manifest now records the reviewed russh version and checksum; the accepted
+risk and 19 November 2026 review deadline are unchanged. This is a dependency-path
+review, not an RSA advisory fix. The transitive crypto-bigint and ctutils security
+updates are 0.7.10 and 0.4.7; they address separate timing advisories without
+removing the existing rsa advisory or changing its accepted scope.
+
 Reviewed 20 October 2026; next review due 19 November 2026 UTC. Maintainer: welcometopwn.
 
 ## Reproducible dependency and call-path evidence

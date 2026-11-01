@@ -1,7 +1,7 @@
 {
   "review_by": "2026-11-19",
   "decision": "RSA private-key files remain supported; residual signing timing risk is accepted only for this reviewed graph. Not an upstream fix or constant-time proof.",
-  "reviewed_on": "2026-10-20",
+  "reviewed_on": "2026-11-01",
   "advisory": "RUSTSEC-2023-0071",
   "authentication_sha256": "f91269f165e6705f15510f6890573ad0315a5dd3e18652acaa3237e78e17a4f8",
   "packages": [
@@ -16,8 +16,8 @@
       "name": "ssh-key"
     },
     {
-      "version": "0.64.1",
-      "checksum": "ba61e87b9ec9a39a59a6bbed4c0b8ff7fb07073405b24a767a1f2c8560ac8f58",
+      "version": "0.65.0",
+      "checksum": "3bb77a4b259312b2abbc541bca1c13cb4e9b61c560a7fd894068c3b92e0c9dc3",
       "name": "russh"
     }
   ]

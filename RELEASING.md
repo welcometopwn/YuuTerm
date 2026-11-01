@@ -33,6 +33,5 @@ Replace `<version>` with the new version, for example `0.3.0`.
 
 Always upload the X11 source ZIP with the binaries: the bundled Cygwin/X runtime
 is LGPL and its source has to be available next to them. `SHA256SUMS.txt` lets
-people verify downloads; it is not a signature. Until code signing is active
-(see [docs/code-signing.md](docs/code-signing.md)), say in the release text that
-the files are unsigned.
+people verify downloads; it is not a signature. Say in the release text that the
+files are unsigned.
