@@ -21,10 +21,11 @@ jobs:
       # Tauri embeds the built UI (dist/) at compile time, so build it before clippy/tests.
       - run: npm run build
       - run: cargo fmt --all -- --check
+      - run: npm run test:downloads
+      - run: npm run test:archives
       - run: cargo clippy --workspace --all-targets --features yuuterm-desktop/capture -- -D warnings
       - run: cargo test --workspace
       - run: npm run test:ui
-      - run: npm run test:downloads
       - name: Cache verified X11 downloads
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

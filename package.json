@@ -6,6 +6,7 @@
   "scripts": {
     "test:ui": "node --test tests/*.test.ts",
     "test:downloads": "node --test tests/pinned-download.test.mjs",
+    "test:archives": "node --test tests/archive-tools.test.mjs",
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "desktop": "tauri dev --config crates/yuuterm-desktop/tauri.conf.json",

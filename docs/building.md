@@ -24,6 +24,7 @@ cargo clippy --workspace --all-targets --features yuuterm-desktop/capture -- -D 
 cargo test --workspace
 npm run test:ui
 npm run test:downloads
+npm run test:archives
 pwsh -NoProfile -File scripts/Build-Release.ps1
 ```
 
@@ -37,6 +38,10 @@ them together; see [RELEASING.md](../RELEASING.md).
 X11 downloads use Windows `curl.exe` with connection and transfer deadlines,
 bounded retries and SHA-512 verification. Each package is logged; a stalled mirror
 fails with the package name instead of silently consuming the entire CI job.
+Archive listing and extraction also have deadlines. Both output streams are
+captured, owner/permission restoration is disabled, and archive links are resolved
+as regular files after extraction. CI tests the actual small Bash package before
+the expensive Rust checks and release build.
 
 The GitHub Actions workflow runs these steps on every push to `main` and uploads
 the packages as build artifacts. It never publishes a release by itself.

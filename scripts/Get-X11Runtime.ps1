@@ -3,6 +3,7 @@
 param([switch]$Release, [switch]$Sources)
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'PinnedDownload.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'ArchiveTools.psm1') -Force
 $root = Split-Path $PSScriptRoot -Parent
 $pin = Get-Content (Join-Path $PSScriptRoot 'x11-runtime.json') -Raw | ConvertFrom-Json
 $cache = Join-Path $root 'target/x11-cache'
@@ -21,17 +22,19 @@ try {
     foreach ($package in $pin.packages) {
         Write-Host "[X11] Runtime package: $($package.name) $($package.version)"
         $archive = Get-Pinned $package.install $cache
-        Write-Host "[X11] Extracting: $(Split-Path $archive -Leaf)"
-        # Windows tar cannot create the archives' symlinks; they are resolved below.
-        & $tar -xf $archive -C $extracted 2>$null
-        $links += & $tar -tvf $archive | Where-Object { $_ -match ' -> ' } | ForEach-Object {
-            if ($_ -match '\s(\S+) -> (\S+)$') { [pscustomobject]@{ Name = $Matches[1]; Target = $Matches[2] } }
-        }
+        $links += @(Expand-PinnedArchive -Archive $archive -Directory $extracted -TarPath $tar)
     }
+    Write-Host "[X11] Resolving $($links.Count) archive links as regular files"
     foreach ($link in $links) {
-        $target = if ($link.Target.StartsWith('/')) { $link.Target.TrimStart('/') } else { "$(Split-Path $link.Name -Parent)/$($link.Target)" }
+        $target = if ($link.HardLink -or $link.Target.StartsWith('/')) { $link.Target.TrimStart('/') } else { "$(Split-Path $link.Name -Parent)/$($link.Target)" }
         $source = Join-Path $extracted $target
         $destination = Join-Path $extracted $link.Name
+        $prefix = [IO.Path]::GetFullPath($extracted) + [IO.Path]::DirectorySeparatorChar
+        foreach ($path in @($source, $destination)) {
+            if (-not [IO.Path]::GetFullPath($path).StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+                throw 'Archive link escapes the extraction directory'
+            }
+        }
         if (-not (Test-Path $destination) -and (Test-Path $source -PathType Leaf)) { Copy-Item $source $destination }
     }
 
