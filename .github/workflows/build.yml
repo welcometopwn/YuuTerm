@@ -1,8 +1,13 @@
 name: Windows preview
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build and draft a release for, for example v0.2.1
+        required: false
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
 permissions:
   contents: read
@@ -12,6 +17,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "26"
@@ -44,3 +51,41 @@ jobs:
           name: YuuTerm-windows-x64-unsigned
           path: target/distribution/*
           if-no-files-found: error
+
+  release:
+    # Creates a draft only; a maintainer reviews and publishes it on GitHub.
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Download build assets
+        run: gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name YuuTerm-windows-x64-unsigned --dir dist
+      - name: Check version and checksums
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "Invalid tag: $TAG"; exit 1; }
+          version="${TAG#v}"
+          for f in "YuuTerm-$version-x64-setup.exe" "YuuTerm-$version-portable.zip" "YuuTerm-$version-x11-sources.zip" SHA256SUMS.txt; do
+            [[ -f "dist/$f" ]] || { echo "Missing dist/$f; the version in the sources must match $TAG"; exit 1; }
+          done
+          (cd dist && tr -d '\r' < SHA256SUMS.txt | sha256sum -c)
+      - name: Extract release notes
+        run: |
+          version="${TAG#v}"
+          awk -v h="## $version " 'index($0, h) == 1 {f = 1; next} /^## / {f = 0} f' CHANGELOG.md | sed '/./,$!d' > notes.md
+          [[ -s notes.md ]] || { echo "CHANGELOG.md has no section for $version"; exit 1; }
+      - name: Create draft release
+        run: |
+          prerelease=()
+          [[ "$TAG" == v0.* || "$TAG" == *-* ]] && prerelease=(--prerelease)
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --draft "${prerelease[@]}" \
+            --title "YuuTerm ${TAG#v}" --notes-file notes.md dist/*
