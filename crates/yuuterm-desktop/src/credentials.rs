@@ -242,6 +242,31 @@ pub fn resolve(
     resolve_for_account(parent, profile, caption, default_port, true)
 }
 
+/// The saved password of a bookmark, if any. Never opens a prompt.
+fn saved_credential(profile: &Profile, account: bool) -> Result<Option<Resolved>, String> {
+    if profile.temporary {
+        return Ok(None);
+    }
+    let Some(target) = Target::saved_for(profile)? else {
+        return Ok(None);
+    };
+    let Some((user, secret)) = load(&target)? else {
+        return Ok(None);
+    };
+    Ok(Some(Resolved {
+        username: if !account {
+            String::new()
+        } else if user.is_empty() {
+            profile.username.clone()
+        } else {
+            user
+        },
+        secret,
+        saved: Some(target),
+        new_identity: None,
+    }))
+}
+
 /// Shared resolver, including password-only VNC. Call only after the protocol's
 /// trust gate; saved credentials never bypass server identity validation.
 pub fn resolve_for_account(
@@ -251,22 +276,8 @@ pub fn resolve_for_account(
     default_port: u16,
     account: bool,
 ) -> Result<Option<Resolved>, String> {
-    if !profile.temporary
-        && let Some(target) = Target::saved_for(profile)?
-        && let Some((user, secret)) = load(&target)?
-    {
-        return Ok(Some(Resolved {
-            username: if !account {
-                String::new()
-            } else if user.is_empty() {
-                profile.username.clone()
-            } else {
-                user
-            },
-            secret,
-            saved: Some(target),
-            new_identity: None,
-        }));
+    if let Some(saved) = saved_credential(profile, account)? {
+        return Ok(Some(saved));
     }
     let retry = take_refused(profile.id);
     let message = format!(
@@ -514,6 +525,42 @@ pub fn same_destination(a: &Profile, b: &Profile) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+
+    /// Real-store tests write to the user's Windows Credential Manager, so they
+    /// are opt-in: `cargo test -p yuuterm-desktop -- --ignored`.
+    /// Serializes real-store tests within this process.
+    static REAL_STORE_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Under concurrent writers (other processes too), CredWrite/CredDelete can
+    /// return before CredRead reflects them, and reads may briefly flip back.
+    /// Poll until the expected state is seen, with a bounded deadline.
+    fn eventually<T>(what: &str, mut probe: impl FnMut() -> Option<T>) -> T {
+        let end = Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Some(value) = probe() {
+                return value;
+            }
+            assert!(
+                Instant::now() < end,
+                "Credential Manager never showed: {what}"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+    fn holds(target: &Target, user: &str, secret: &Secret) -> bool {
+        load(target).unwrap().is_some_and(|(u, s)| {
+            u == user && s.expose_for_authentication() == secret.expose_for_authentication()
+        })
+    }
+    struct Cleanup(Target);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = forget(&self.0);
+        }
+    }
+
     fn profile() -> Profile {
         Profile {
             id: 7,
@@ -571,46 +618,51 @@ mod tests {
             assert!(Secret::new(bad).is_err());
         }
     }
-    #[test]
-    fn vnc_modes_have_separate_targets_and_use_shared_saved_resolver() {
+    fn vnc_profiles() -> (Profile, Profile) {
         let identity = StorageIdentity::fresh().unwrap();
         let mut p = profile();
         p.protocol = yuuterm_core::Protocol::Vnc;
         p.credential_id = identity.as_local_metadata().into();
-        let plain = Target::saved_for(&p).unwrap().unwrap();
         let mut other = p.clone();
         other.vnc.auth = yuuterm_core::vnc::VncAuth::Vnc;
+        (p, other)
+    }
+    #[test]
+    fn vnc_modes_have_separate_targets() {
+        let (p, mut other) = vnc_profiles();
         assert!(!same_destination(&p, &other));
-        assert_ne!(plain.0, Target::saved_for(&other).unwrap().unwrap().0);
+        assert_ne!(
+            Target::saved_for(&p).unwrap().unwrap().0,
+            Target::saved_for(&other).unwrap().unwrap().0
+        );
         other.name = "Renamed".into();
         assert!(same_destination(&other, &other.clone()));
-        struct Cleanup(Target);
-        impl Drop for Cleanup {
-            fn drop(&mut self) {
-                let _ = forget(&self.0);
-            }
-        }
+    }
+    #[test]
+    #[ignore = "Writes to the real Windows Credential Manager"]
+    fn vnc_modes_use_shared_saved_resolver() {
+        let _lock = REAL_STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let (p, other) = vnc_profiles();
+        let password = Secret::new(b"password".to_vec()).unwrap();
         for (profile, account) in [(&p, true), (&other, false)] {
             let target = Cleanup(Target::saved_for(profile).unwrap().unwrap());
             assert!(load(&target.0).unwrap().is_none());
-            store(
-                &target.0,
-                if account { "fixture" } else { "" },
-                &Secret::new(b"password".to_vec()).unwrap(),
-            )
-            .unwrap();
-            // Null parent is safe: a saved credential must not open any dialog.
-            let resolved =
-                resolve_for_account(HWND::default(), profile, "Never shown", 5900, account)
-                    .unwrap()
-                    .unwrap();
-            assert_eq!(resolved.username, if account { "fixture" } else { "" });
+            let user = if account { "fixture" } else { "" };
+            store(&target.0, user, &password).unwrap();
+            // The prompt-free half of resolve_for_account: a stale read can
+            // only fail this test, never open a credential dialog.
+            let resolved = eventually("saved VNC credential", || {
+                saved_credential(profile, account).unwrap()
+            });
+            assert_eq!(resolved.username, user);
             assert_eq!(resolved.secret.expose_for_authentication(), "password");
             assert!(resolved.saved.is_some() && resolved.new_identity.is_none());
         }
     }
     #[test]
+    #[ignore = "Writes to the real Windows Credential Manager"]
     fn actual_windows_store_roundtrip_replace_and_delete_are_isolated() {
+        let _lock = REAL_STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let nonce = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -621,30 +673,21 @@ mod tests {
         ));
         // Refuse to touch an existing entry, even in the test namespace.
         assert!(load(&target).unwrap().is_none());
-        struct Cleanup(Target);
-        impl Drop for Cleanup {
-            fn drop(&mut self) {
-                let _ = forget(&self.0);
-            }
-        }
         let cleanup = Cleanup(target);
         let first = Secret::new("dummy-only-秘密-€".as_bytes().to_vec()).unwrap();
         store(&cleanup.0, "fixture", &first).unwrap();
-        let (user, loaded) = load(&cleanup.0).unwrap().unwrap();
-        assert_eq!(user, "fixture");
-        assert!(loaded.expose_for_authentication() == first.expose_for_authentication());
+        eventually("stored secret", || {
+            holds(&cleanup.0, "fixture", &first).then_some(())
+        });
         let replacement = Secret::new(b"dummy-replacement".to_vec()).unwrap();
         store(&cleanup.0, "fixture", &replacement).unwrap();
-        assert!(
-            load(&cleanup.0)
-                .unwrap()
-                .unwrap()
-                .1
-                .expose_for_authentication()
-                == replacement.expose_for_authentication()
-        );
+        eventually("replaced secret", || {
+            holds(&cleanup.0, "fixture", &replacement).then_some(())
+        });
         forget(&cleanup.0).unwrap();
-        assert!(load(&cleanup.0).unwrap().is_none());
+        eventually("deleted secret", || {
+            load(&cleanup.0).unwrap().is_none().then_some(())
+        });
         forget(&cleanup.0).unwrap();
     }
 }
