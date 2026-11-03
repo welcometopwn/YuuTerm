@@ -1,0 +1,89 @@
+name: Bug report
+description: Something does not work as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. This is a one-person project, so I can't promise a response time.
+
+        **Do not paste passwords, private keys, real host names, IP addresses, saved sessions or terminal logs.** Replace them with placeholders such as `example-host`. For security problems, do not open an issue; use the private report link on the issue chooser page.
+  - type: input
+    id: version
+    attributes:
+      label: YuuTerm version
+      description: Shown in the sidebar footer and under Settings, About.
+      placeholder: "0.2.2"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install it?
+      options:
+        - Installer (setup EXE)
+        - Portable ZIP
+        - Built from source
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: "Windows 11 24H2"
+    validations:
+      required: true
+  - type: dropdown
+    id: protocol
+    attributes:
+      label: Which part is affected?
+      options:
+        - SSH terminal
+        - SFTP files
+        - RDP
+        - VNC
+        - TELNET
+        - Serial
+        - Local terminal
+        - X11 forwarding
+        - Session list, import or export
+        - Settings or appearance
+        - Installer or startup
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: server
+    attributes:
+      label: Server or device type
+      description: Software and version only, no addresses.
+      placeholder: "OpenSSH 9.x on Debian, Windows 11 RDP host, TigerVNC, ESP32 on COM"
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Include the exact error text if there is one.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Before you submit
+      options:
+        - label: I removed passwords, keys, real host names, addresses and terminal output that I do not want public.
+          required: true
