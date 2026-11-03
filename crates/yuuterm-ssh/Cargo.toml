@@ -16,7 +16,7 @@ vt100 = "=0.16.2"
 zeroize = "1"
 subtle = "2.6"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net", "time", "io-util", "fs"] }
-sha2 = "0.10"
+sha2 = "0.11"
 rand = "0.10"
 tokio-util = { version = "0.7", features = ["rt"] }
 serde.workspace = true

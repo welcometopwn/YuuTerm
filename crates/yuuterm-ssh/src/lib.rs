@@ -1,6 +1,7 @@
 #[cfg(windows)]
 mod agent_pipe;
 pub mod files;
+pub mod hex;
 mod identity;
 pub mod local;
 mod ownership;

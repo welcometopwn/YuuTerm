@@ -99,8 +99,8 @@ impl Target {
             });
         }
         Ok(Self(format!(
-            "YuuTerm/password/v1/{:x}",
-            Sha256::digest(metadata)
+            "YuuTerm/password/v1/{}",
+            yuuterm_ssh::hex::lower(Sha256::digest(metadata))
         )))
     }
     /// The saved-password target of a bookmark that already has a local identity.

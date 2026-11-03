@@ -490,7 +490,11 @@ async fn regular(sftp: &RawSftpSession, path: &str, limit: u64) -> Result<FileAt
     Ok(attrs)
 }
 fn fingerprint(attrs: &FileAttributes, hash: Sha256) -> String {
-    format!("{}:{:x}", metadata_revision(attrs), hash.finalize())
+    format!(
+        "{}:{}",
+        metadata_revision(attrs),
+        crate::hex::lower(hash.finalize())
+    )
 }
 pub fn metadata_revision(attrs: &FileAttributes) -> String {
     format!(
@@ -890,7 +894,7 @@ async fn upload(
             offset == metadata.len(),
             "Local file changed size during upload"
         );
-        Ok((offset, format!("{:x}", hash.finalize())))
+        Ok((offset, crate::hex::lower(hash.finalize())))
     }
     .await;
     let closed = sftp.close(handle).await;
@@ -920,7 +924,7 @@ async fn upload(
         local_hash.update(&buffer[..n]);
     }
     ensure!(
-        read == bytes && format!("{:x}", local_hash.finalize()) == uploaded_hash,
+        read == bytes && crate::hex::lower(local_hash.finalize()) == uploaded_hash,
         "Local file changed during upload; remote temporary upload retained at {temporary}"
     );
     if let Some(attrs) = original {
@@ -1024,7 +1028,7 @@ pub async fn local_revision(path: &Path) -> Result<String> {
             && after.modified()? == before.modified()?,
         "Local edit is still being saved"
     );
-    Ok(format!("{:x}", hash.finalize()))
+    Ok(crate::hex::lower(hash.finalize()))
 }
 
 #[cfg(test)]

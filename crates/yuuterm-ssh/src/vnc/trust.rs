@@ -83,7 +83,7 @@ impl VncTrust {
 }
 
 pub(super) fn fingerprint(cert: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(cert))
+    crate::hex::lower(Sha256::digest(cert))
 }
 
 #[derive(Debug)]

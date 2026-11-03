@@ -317,7 +317,7 @@ fn certificate(body: &[u8], pin: &str) -> Result<(), String> {
         .get(6..6 + leaf)
         .filter(|der| !der.is_empty())
         .ok_or("Malformed TLS Certificate")?;
-    if format!("{:x}", Sha256::digest(der)).eq_ignore_ascii_case(pin) {
+    if yuuterm_ssh::hex::lower(Sha256::digest(der)).eq_ignore_ascii_case(pin) {
         Ok(())
     } else {
         Err("The server's certificate is not the remembered one".into())
@@ -364,7 +364,7 @@ mod tests {
         message(11, &body)
     }
     fn pin(leaf: &[u8]) -> String {
-        format!("{:x}", Sha256::digest(leaf))
+        yuuterm_ssh::hex::lower(Sha256::digest(leaf))
     }
     fn run_check(stream: &[u8], pin: &str) -> (Result<(), String>, usize) {
         let mut source = stream;
