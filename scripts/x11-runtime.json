@@ -1,5 +1,5 @@
 {
-  "mirror": "https://mirrors.kernel.org/sourceware/cygwin",
+  "mirror": "https://cygwin.mirror.constant.com",
   "setup_index_signed_by": "56405CF6FCC81574682A5D561A698DE9E2E56300",
   "checked": "2026-10-27",
   "bin": [
