@@ -23,7 +23,7 @@ lzma-rust2 = { version = "=0.24.0", default-features = false, features = ["std"]
 
 windows-core = "0.62"
 zeroize = "1"
-sha2 = "0.10"
+sha2 = "0.11"
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 
 [build-dependencies]

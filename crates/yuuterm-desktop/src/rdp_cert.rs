@@ -176,7 +176,7 @@ pub fn fingerprint(host: &str, port: u16, timeout: Duration) -> Result<String, S
         .and_then(|chain| chain.first())
         .ok_or("Server presented no certificate")?;
     let _ = stream.stream.shutdown(std::net::Shutdown::Both);
-    Ok(format!("{:x}", Sha256::digest(leaf.as_ref())))
+    Ok(yuuterm_ssh::hex::lower(Sha256::digest(leaf.as_ref())))
 }
 
 /// Largest store read or written. 1000 entries with 253-byte host names fit.

@@ -84,7 +84,7 @@ impl Sink {
                 return false;
             }
             let bytes = std::slice::from_raw_parts(bstr.as_ptr() as *const u8, length);
-            format!("{:x}", Sha256::digest(bytes))
+            yuuterm_ssh::hex::lower(Sha256::digest(bytes))
         };
         if let Ok(mut buffer) = self.0.lock() {
             buffer.key_sha256 = Some(hash.clone());

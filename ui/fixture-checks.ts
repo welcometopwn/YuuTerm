@@ -1136,14 +1136,26 @@ export async function checkFixture(ids: number[]) {
     copy.dispatchEvent(
       new MouseEvent("dblclick", { bubbles: true, cancelable: true }),
     );
-    await until(
-      () =>
-        !!document
-          .querySelector('section[data-profile-id="5"][data-live-id]')
-          ?.textContent?.includes("Connected") &&
-        document.querySelectorAll("section[data-live-id]").length === 5,
-      "Repeated double-click opens one real SSH connection for the copied profile",
-    );
+    const doubleClicked = Date.now();
+    try {
+      await until(
+        () =>
+          !!document
+            .querySelector('section[data-profile-id="5"][data-live-id]')
+            ?.textContent?.includes("Connected") &&
+          document.querySelectorAll("section[data-live-id]").length === 5,
+        "Repeated double-click opens one real SSH connection for the copied profile",
+      );
+    } catch (error) {
+      // Intermittent once: record timing and state, not terminal text.
+      const pane = document.querySelector('section[data-profile-id="5"]');
+      throw new Error(
+        `${(error as Error).message} (after ${Date.now() - doubleClicked} ms; ` +
+          `live panes ${document.querySelectorAll("section[data-live-id]").length}; ` +
+          `copy pane ${pane ? (pane.hasAttribute("data-live-id") ? "live" : "not live") : "missing"}; ` +
+          `state "${pane?.querySelector(".pane-title")?.getAttribute("title") ?? "none"}")`,
+      );
+    }
     const copyLiveId = document
       .querySelector('section[data-profile-id="5"]')!
       .getAttribute("data-live-id");

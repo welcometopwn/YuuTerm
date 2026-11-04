@@ -31,7 +31,7 @@ fn read_known_executable(path: &Path) -> Option<BTreeMap<u16, String>> {
     // This exact publisher build's FLICO32 archive and index mapping were checked
     // offline. Other versions fall back, rather than assigning unrelated icons.
     if bytes.len() > 64 * 1024 * 1024
-        || format!("{:x}", Sha256::digest(&bytes))
+        || yuuterm_ssh::hex::lower(Sha256::digest(&bytes))
             != "f0e77836182fe52e66c68f88fbe13801f935f100623103df1d8be2181294e8e5"
     {
         return None;
