@@ -1,3 +1,4 @@
+use std::num::NonZeroU16;
 use std::sync::Arc;
 
 #[derive(Clone, Debug)]
@@ -30,10 +31,14 @@ pub fn dimensions(rows: u16, cols: u16) -> (u16, u16) {
     (rows.clamp(2, 100), cols.clamp(10, 240))
 }
 
+fn non_zero(value: u16) -> NonZeroU16 {
+    NonZeroU16::new(value).unwrap_or(NonZeroU16::MIN)
+}
+
 impl Terminal {
     pub fn new() -> Self {
         Self {
-            parser: vt100::Parser::new(24, 80, 500),
+            parser: vt100::Parser::new(non_zero(24), non_zero(80), 500),
         }
     }
     pub fn process(&mut self, bytes: &[u8]) {
@@ -41,7 +46,9 @@ impl Terminal {
     }
     pub fn resize(&mut self, rows: u16, cols: u16) {
         let (rows, cols) = dimensions(rows, cols);
-        self.parser.screen_mut().set_size(rows, cols);
+        self.parser
+            .screen_mut()
+            .set_size(non_zero(rows), non_zero(cols));
     }
     pub fn scroll(&mut self, delta: i32) {
         let current = self.parser.screen().scrollback();
@@ -52,6 +59,7 @@ impl Terminal {
     pub fn view(&self) -> Arc<TerminalView> {
         let screen = self.parser.screen();
         let (rows, cols) = screen.size();
+        let (rows, cols) = (rows.get(), cols.get());
         let cells = (0..rows)
             .flat_map(|row| {
                 (0..cols).map(move |col| {
