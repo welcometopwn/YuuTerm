@@ -443,6 +443,7 @@ struct Session {
     remembered: bool,
     /// Loopback relay that enforces the remembered certificate.
     relay: Option<crate::rdp_relay::Relay>,
+    forward: Option<crate::ssh_gateways::Forward>,
     /// When the control first reported Connected, for servers that never send
     /// the Windows logon notification (measured: xrdp).
     connected_at: Option<std::time::Instant>,
@@ -756,11 +757,18 @@ fn apply_policy(control: &IDispatch, profile: &Profile) -> std::result::Result<(
     Ok(())
 }
 
-pub fn open(parent: usize, profile: Profile) -> std::result::Result<u64, String> {
+pub(crate) fn open_via(
+    parent: usize,
+    profile: Profile,
+    forward: Option<crate::ssh_gateways::Forward>,
+) -> std::result::Result<u64, String> {
     if profile.protocol != yuuterm_core::Protocol::Rdp {
         return Err("Not an RDP bookmark".into());
     }
     profile.validate()?;
+    if !profile.gateways.is_empty() && forward.is_none() {
+        return Err("SSH gateway transport is required for this bookmark".into());
+    }
     let parent = HWND(parent as *mut _);
     SESSIONS.with(|slot| {
         let mut sessions = slot.borrow_mut();
@@ -795,6 +803,7 @@ pub fn open(parent: usize, profile: Profile) -> std::result::Result<u64, String>
             fingerprint: None,
             remembered: false,
             relay: None,
+            forward,
             connected_at: None,
             _ole: ole,
         };
@@ -819,6 +828,15 @@ pub fn endpoint(id: u64) -> Option<(String, u16)> {
         slot.borrow()
             .get(&id)
             .map(|s| (s.profile.host.clone(), s.profile.port))
+    })
+}
+
+pub fn transport_endpoint(id: u64) -> Option<(String, u16)> {
+    SESSIONS.with(|slot| {
+        slot.borrow().get(&id).map(|s| match &s.forward {
+            Some(f) => (f.address.ip().to_string(), f.address.port()),
+            None => (s.profile.host.clone(), s.profile.port),
+        })
     })
 }
 
@@ -864,17 +882,26 @@ fn connection_state(control: &IDispatch) -> i32 {
         .unwrap_or(0)
 }
 
+pub(crate) struct Certificate {
+    pub fingerprint: String,
+    pub enforce: bool,
+    pub remembered: bool,
+}
+
 fn connect(
     parent: HWND,
     id: u64,
     scale: u32,
-    certificate: Option<(String, bool)>,
+    certificate: Option<Certificate>,
 ) -> std::result::Result<Option<String>, String> {
     let profile = SESSIONS.with(|slot| {
         let sessions = slot.borrow();
         let session = sessions
             .get(&id)
             .ok_or("This RDP session no longer exists")?;
+        if !session.profile.gateways.is_empty() && session.forward.is_none() {
+            return Err("SSH gateway transport ended; reconnect opens a new one");
+        }
         if session.started || session.cancelled {
             return Err("This RDP session already connected once; reconnect opens a new one");
         }
@@ -904,13 +931,20 @@ fn connect(
         // A remembered, unchanged certificate connects without the prompt
         // (level 0) through the relay, which refuses any other certificate on
         // this very connection; anything else asks as mstsc does (level 2).
-        let remembered = certificate.as_ref().is_some_and(|(_, r)| *r);
+        let remembered = certificate.as_ref().is_some_and(|c| c.remembered);
+        let enforced = certificate.as_ref().is_some_and(|c| c.enforce);
         let advanced = sub(control, w!("AdvancedSettings9"))?;
-        if let Some((pin, true)) = &certificate {
+        if let Some(certificate) = certificate.as_ref().filter(|c| c.enforce) {
             let relay = crate::rdp_relay::Relay::start(
-                session.profile.host.clone(),
-                session.profile.port,
-                pin.clone(),
+                session.forward.as_ref().map_or_else(
+                    || session.profile.host.clone(),
+                    |f| f.address.ip().to_string(),
+                ),
+                session
+                    .forward
+                    .as_ref()
+                    .map_or(session.profile.port, |f| f.address.port()),
+                certificate.fingerprint.clone(),
             )?;
             put(control, w!("Server"), VARIANT::from("127.0.0.1")).map_err(|e| e.to_string())?;
             put(
@@ -920,14 +954,22 @@ fn connect(
             )
             .map_err(|e| e.to_string())?;
             session.relay = Some(relay);
+        } else if let Some(forward) = &session.forward {
+            put(control, w!("Server"), VARIANT::from("127.0.0.1")).map_err(|e| e.to_string())?;
+            put(
+                &advanced,
+                w!("RDPPort"),
+                VARIANT::from(i32::from(forward.address.port())),
+            )
+            .map_err(|e| e.to_string())?;
         }
         put(
             &advanced,
             w!("AuthenticationLevel"),
-            VARIANT::from(if remembered { 0 } else { 2 }),
+            VARIANT::from(if enforced { 0 } else { 2 }),
         )
         .map_err(|e| e.to_string())?;
-        session.fingerprint = certificate.map(|(f, _)| f);
+        session.fingerprint = certificate.map(|c| c.fingerprint);
         session.remembered = remembered;
         put(
             control,
@@ -1090,6 +1132,10 @@ fn status(id: u64, session: &mut Session) -> std::result::Result<Status, String>
         None if session.started => "Connecting…".into(),
         None => "Ready to connect".into(),
     };
+    if finished {
+        session.forward.take();
+        session.relay.take();
+    }
     let p = &session.profile;
     let user = if p.username.is_empty() {
         String::new()
@@ -1124,7 +1170,7 @@ pub fn perform(
     action: Action,
     bounds: Option<Bounds>,
     scale: Option<u32>,
-    certificate: Option<(String, bool)>,
+    certificate: Option<Certificate>,
 ) -> std::result::Result<Option<Status>, String> {
     let parent = HWND(parent as *mut _);
     let scale = scale.unwrap_or(100).clamp(100, 500);
@@ -1182,6 +1228,11 @@ pub fn perform(
                 send_ctrl_alt_del(session.control.as_ref().unwrap())?;
             }
             Action::Disconnect => {
+                session.forward.take();
+                session.relay.take();
+                if !session.started {
+                    session.cancelled = true;
+                }
                 if session.started {
                     method(session.control.as_ref().unwrap(), w!("Disconnect"))
                         .map_err(|e| e.to_string())?;

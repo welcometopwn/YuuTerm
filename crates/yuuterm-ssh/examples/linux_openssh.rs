@@ -57,9 +57,27 @@ async fn main() -> Result<()> {
         "Remote writes must stay in the generated test subtree"
     );
     let engine = Engine::new(folder.join("host-keys.json"))?;
-    let live = engine.connect(profile, Arc::new(|| {}))?;
+    // Optional SSH gateways: manual key-file hops from the runner.
+    let hops = profile
+        .gateways
+        .iter()
+        .map(|g| match g {
+            yuuterm_core::Gateway::Manual(hop) => Ok(yuuterm_ssh::Hop {
+                gateway: hop.clone(),
+                password: None,
+            }),
+            yuuterm_core::Gateway::Saved { .. } => anyhow::bail!("Manual gateways only"),
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let through = hops.len();
+    let live = engine.connect_via(profile, hops, Arc::new(|| {}), None)?;
     wait(&live, |s| s.connected).await?;
     let mut checks = vec!["Key-file SSH authentication with the isolated host pin".to_owned()];
+    if through > 0 {
+        checks.push(format!(
+            "Connected through {through} SSH gateway(s), each verified against its pinned host key"
+        ));
+    }
     let result:Result<()>=async {
         live.send(Command::Resize{rows:30,cols:100}).map_err(anyhow::Error::msg)?;
         // Bash builds the markers from pieces so the echoed command line cannot match.

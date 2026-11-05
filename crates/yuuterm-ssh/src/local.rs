@@ -352,6 +352,7 @@ mod tests {
             connected: false,
             finished: false,
             password_rejected: false,
+            rejected_gateway: None,
             trust: None,
             terminal: Terminal::new().view(),
             path: String::new(),

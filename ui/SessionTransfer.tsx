@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Ellipsis } from "lucide-react";
 import { ContextMenu, type MenuState } from "./ContextMenu";
 import { Modal } from "./Modal";
+import { importGatewayNote } from "./gateways";
 import { protocolLabel, type Preferences, type Profile } from "./types";
 
 type Preview = {
@@ -165,6 +166,9 @@ export function SessionTransfer({
                           <code>SSH config host: {p.ssh.config_host}</code>
                         )}
                       </p>
+                    )}
+                    {importGatewayNote(p) && (
+                      <p className="warning">{importGatewayNote(p)}</p>
                     )}
                   </details>
                 ))}

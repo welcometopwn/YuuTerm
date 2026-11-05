@@ -294,6 +294,7 @@ pub(crate) async fn run(
     state: &watch::Sender<Snapshot>,
     wake: Wake,
     output: Option<mpsc::Sender<Vec<u8>>>,
+    ready: Option<tokio::sync::oneshot::Receiver<()>>,
 ) -> Result<()> {
     let mut stream = tokio::time::timeout(
         Duration::from_secs(10),
@@ -302,6 +303,11 @@ pub(crate) async fn run(
     .await
     .context("TELNET connection timed out")??;
     stream.set_nodelay(true)?;
+    if let Some(ready) = ready {
+        ready
+            .await
+            .context("SSH gateway did not open the target tunnel")?;
+    }
     let mut codec = Codec::default();
     let mut terminal = Terminal::new();
     let mut data = [0u8; 16384];

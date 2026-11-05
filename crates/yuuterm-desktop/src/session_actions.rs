@@ -43,6 +43,7 @@ pub async fn move_profiles(
 pub async fn delete_profiles(
     window: WebviewWindow,
     profile_ids: Vec<u64>,
+    detach: Option<bool>,
 ) -> Result<Preferences, String> {
     main_only(&window)?;
     if profile_ids.is_empty() || profile_ids.len() > 1000 {
@@ -83,16 +84,14 @@ pub async fn delete_profiles(
         if !c.can_save && !fixture && removed.iter().any(|p| !p.temporary) {
             return Err("Settings saving is disabled".into());
         }
-        let candidate = edits::remove(&c.prefs, &profile_ids)?;
+        let candidate = edits::remove_detaching(&c.prefs, &profile_ids, detach.unwrap_or(false))?;
         if c.can_save && !fixture {
             config::save(&candidate)?;
         }
         c.prefs = candidate.clone();
         drop(c);
         for profile in removed {
-            if let Err(e) = rdp::forget_password(&profile) {
-                eprintln!("delete: saved password not removed: {e}");
-            }
+            crate::ssh_gateways::forget_passwords(&profile);
         }
         Ok(candidate)
     })

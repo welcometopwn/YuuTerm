@@ -1,7 +1,7 @@
 [Bookmarks]
 SubRep=
 ImgNum=42
-SSH=#144#0%ssh.example.test%2222%fixture-user%%-1%-1%fixture-secret-command%%%fixture-secret-password#ignored-font#0
+SSH=#144#0%ssh.example.test%2222%fixture-user%%-1%-1%fixture-secret-command%%%#ignored-font#0#fixture-secret-password
 TELNET=#109#1%telnet.example.test%23%fixture-user#ignored
 RDP=#109#4%rdp.example.test%3389%FIXTURE\user#ignored
 VNC=#109#5%vnc.example.test%5901%-1%0#ignored

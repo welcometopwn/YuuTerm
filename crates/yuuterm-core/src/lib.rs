@@ -1,6 +1,8 @@
 //! Protocol-independent metadata. Credentials and live transports do not belong here.
 pub mod broadcast;
 pub mod config;
+mod gateway;
+pub use gateway::*;
 pub mod highlight_import;
 pub mod instance;
 pub mod mobaxterm;
@@ -92,6 +94,9 @@ pub struct Profile {
     /// Windows Credential Manager. Never copied, exported or imported.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub credential_id: String,
+    /// SSH gateways (jump hosts) in connection order; empty is direct.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub gateways: Vec<Gateway>,
 }
 
 /// Where remote audio plays. Values match the Microsoft control's
@@ -331,6 +336,7 @@ impl Default for Profile {
             rdp: RdpSettings::default(),
             vnc: vnc::VncSettings::default(),
             credential_id: String::new(),
+            gateways: Vec::new(),
         }
     }
 }
@@ -396,15 +402,8 @@ impl Profile {
             if !self.host.is_empty() || self.ssh.x11_forward {
                 return Err("A local terminal has no host or forwarding.");
             }
-        } else if self.host.is_empty()
-            || self.host.len() > 253
-            || self.host.starts_with('-')
-            || self
-                .host
-                .chars()
-                .any(|c| c.is_whitespace() || c.is_control())
-        {
-            return Err("Enter a host, IP address or COM device without spaces or options.");
+        } else {
+            validate_host(&self.host)?;
         }
         if self.protocol == Protocol::Serial {
             let suffix = self
@@ -437,12 +436,48 @@ impl Profile {
         {
             return Err("Font size must be between 8 and 32.");
         }
-        Ok(())
+        validate_gateways(self)
     }
 
     pub fn effective_font_size(&self, global: f32) -> f32 {
         self.font_size.unwrap_or(global)
     }
+}
+
+pub(crate) fn validate_host(host: &str) -> Result<(), &'static str> {
+    if host.is_empty()
+        || host.len() > 253
+        || host.starts_with('-')
+        || host.chars().any(|c| c.is_whitespace() || c.is_control())
+    {
+        return Err("Enter a host, IP address or COM device without spaces or options.");
+    }
+    Ok(())
+}
+
+/// User name and identity fields of an SSH endpoint other than the target.
+pub(crate) fn validate_ssh_identity(
+    username: &str,
+    auth: SshAuth,
+    agent_pipe: &str,
+    others: &[&str],
+) -> Result<(), &'static str> {
+    if username.len() > 256 || username.chars().any(char::is_control) {
+        return Err("Username is too long or contains control characters.");
+    }
+    if std::iter::once(agent_pipe)
+        .chain(others.iter().copied())
+        .any(|v| v.len() > 4096 || v.chars().any(char::is_control))
+    {
+        return Err("SSH identity settings are too long or contain control characters.");
+    }
+    if auth == SshAuth::Password && username.trim().is_empty() {
+        return Err("SSH password authentication requires an explicit username.");
+    }
+    if auth == SshAuth::WindowsAgent && !agent_pipe.starts_with(r"\\.\pipe\") {
+        return Err(r"Use a local Windows agent pipe, for example \\.\pipe\openssh-ssh-agent.");
+    }
+    Ok(())
 }
 
 /// Lowercase UUID, not all zeros.

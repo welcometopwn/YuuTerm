@@ -44,6 +44,8 @@ export interface Profile {
   vnc?: { auth: "Plain" | "Vnc"; clipboard?: boolean; resize_server?: boolean };
   // Backend-owned identity of a saved password; never edited in the UI.
   credential_id?: string;
+  /** SSH gateways (jump hosts) in connection order; absent or empty is direct. */
+  gateways?: Gateway[];
   ssh: {
     x11_forward?: boolean;
     auth: "WindowsAgent" | "KeyFile" | "Password";
@@ -54,6 +56,19 @@ export interface Profile {
     key_file: string;
   };
 }
+export interface ManualGateway {
+  host: string;
+  port: number;
+  username: string;
+  auth: "WindowsAgent" | "KeyFile" | "Password";
+  key_file: string;
+  agent_pipe: string;
+  identity_fingerprint: string;
+  // Backend-owned identity of the hop's saved password; never edited in the UI.
+  credential_id?: string;
+}
+export type Gateway =
+  { kind: "Saved"; profile_id: number } | ({ kind: "Manual" } & ManualGateway);
 export interface Preferences {
   version: number;
   profiles: Profile[];
@@ -100,6 +115,8 @@ export interface FileEntry {
 }
 export interface TrustPrompt {
   host: string;
+  /** "Target" or "Gateway N of M". */
+  role?: string;
   algorithm: string;
   fingerprint: string;
 }

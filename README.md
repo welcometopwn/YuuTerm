@@ -2,7 +2,8 @@
 
 A terminal and remote session manager for Windows. SSH with a file browser,
 RDP, VNC, Telnet, serial ports and X11 forwarding, all in tabs and split panes
-in one window.
+in one window. SSH, RDP, VNC and Telnet sessions can go through SSH gateways
+(jump hosts).
 
 ![YuuTerm with two local terminal sessions](docs/images/yuuterm.png)
 

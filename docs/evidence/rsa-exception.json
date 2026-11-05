@@ -3,7 +3,7 @@
   "decision": "RSA private-key files remain supported; residual signing timing risk is accepted only for this reviewed graph. Not an upstream fix or constant-time proof.",
   "reviewed_on": "2026-11-01",
   "advisory": "RUSTSEC-2023-0071",
-  "authentication_sha256": "f91269f165e6705f15510f6890573ad0315a5dd3e18652acaa3237e78e17a4f8",
+  "authentication_sha256": "0e3e0a29a80b4399baacd38879d5dcccdc32d49cdb687c6a96aae4c5b75da403",
   "packages": [
     {
       "version": "0.10.0-rc.18",

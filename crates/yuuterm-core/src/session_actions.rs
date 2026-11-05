@@ -69,9 +69,80 @@ pub fn remove(prefs: &Preferences, ids: &[u64]) -> Result<Preferences, String> {
     next.validate()?;
     Ok(next)
 }
+/// Deletion that keeps SSH gateway references intact: bookmarks that stay and
+/// use a deleted one as gateway need `detach` (references become manual hops),
+/// otherwise `GATEWAY_IN_USE:<count>` asks the user first.
+pub fn remove_detaching(
+    prefs: &Preferences,
+    ids: &[u64],
+    detach: bool,
+) -> Result<Preferences, String> {
+    let dependents = prefs
+        .profiles
+        .iter()
+        .filter(|p| !ids.contains(&p.id))
+        .filter(|p| {
+            ids.iter().any(|id| {
+                p.gateways
+                    .contains(&crate::Gateway::Saved { profile_id: *id })
+            })
+        })
+        .count();
+    if dependents > 0 && !detach {
+        return Err(format!("GATEWAY_IN_USE:{dependents}"));
+    }
+    let mut detached = prefs.clone();
+    crate::detach_gateway_references(&mut detached.profiles, ids);
+    remove(&detached, ids)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn gateway_prefs() -> Preferences {
+        let mut prefs = Preferences::fresh();
+        prefs.profiles = (1..=3)
+            .map(|id| Profile {
+                id,
+                name: format!("Session {id}"),
+                host: format!("host{id}.test"),
+                username: "admin".into(),
+                ..Default::default()
+            })
+            .collect();
+        prefs.profiles[0].gateways = vec![crate::Gateway::Saved { profile_id: 3 }];
+        prefs.profiles[1].gateways = vec![crate::Gateway::Saved { profile_id: 3 }];
+        prefs
+    }
+    #[test]
+    fn delete_with_dependents_requires_detach() {
+        let prefs = gateway_prefs();
+        assert_eq!(
+            remove_detaching(&prefs, &[3], false).err().as_deref(),
+            Some("GATEWAY_IN_USE:2")
+        );
+        let next = remove_detaching(&prefs, &[3], true).unwrap();
+        assert_eq!(next.profiles.len(), 2);
+        assert!(matches!(
+            &next.profiles[0].gateways[0],
+            crate::Gateway::Manual(hop) if hop.host == "host3.test"
+        ));
+        assert!(remove_detaching(&prefs, &[1], false).is_ok());
+    }
+    #[test]
+    fn bulk_delete_detaches_survivors_only() {
+        let prefs = gateway_prefs();
+        assert_eq!(
+            remove_detaching(&prefs, &[1, 3], false).err().as_deref(),
+            Some("GATEWAY_IN_USE:1")
+        );
+        let next = remove_detaching(&prefs, &[1, 3], true).unwrap();
+        assert_eq!(next.profiles.iter().map(|p| p.id).collect::<Vec<_>>(), [2]);
+        assert!(matches!(
+            &next.profiles[0].gateways[0],
+            crate::Gateway::Manual(_)
+        ));
+        assert!(remove_detaching(&prefs, &[1, 2, 3], false).is_ok());
+    }
     #[test]
     fn moves_are_atomic_ordered_and_preserve_bookmark_metadata() {
         let mut prefs = Preferences::fresh();

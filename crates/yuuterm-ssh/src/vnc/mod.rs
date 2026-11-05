@@ -133,13 +133,23 @@ impl Drop for Handle {
 /// Requires a Tokio runtime; does no network or filesystem I/O on the caller.
 pub fn start(options: Options, credentials: Credentials, trust: VncTrust) -> Result<Handle> {
     validate_credentials(options.auth, &credentials)?;
-    start_inner(options, Some(credentials), trust)
+    start_inner(options, Some(credentials), trust, None)
 }
 
 /// Prompts only after TLS and endpoint pin validation. No password exists in
 /// the worker until the application answers CredentialsRequired explicitly.
 pub fn start_interactive(options: Options, trust: VncTrust) -> Result<Handle> {
-    start_inner(options, None, trust)
+    start_inner(options, None, trust, None)
+}
+/// Connect through an application-owned loopback forward without changing TLS
+/// server name, pin identity or credential destination.
+pub fn start_interactive_via(
+    options: Options,
+    trust: VncTrust,
+    address: std::net::SocketAddr,
+) -> Result<Handle> {
+    anyhow::ensure!(address.ip().is_loopback(), "VNC transport must be loopback");
+    start_inner(options, None, trust, Some(address))
 }
 fn validate_credentials(auth: TlsAuth, credentials: &Credentials) -> Result<()> {
     anyhow::ensure!(
@@ -160,6 +170,7 @@ fn start_inner(
     options: Options,
     credentials: Option<Credentials>,
     trust: VncTrust,
+    transport: Option<std::net::SocketAddr>,
 ) -> Result<Handle> {
     anyhow::ensure!(
         options.host.len() <= 253 && options.port > 0,
@@ -189,7 +200,7 @@ fn start_inner(
         let result = tokio::select! {
             biased;
             _ = token.cancelled() => return,
-            result = run(id, options, (credentials, credential_rx), verifier.clone(), sender.clone(), inputs) => result,
+            result = run(id, options, (credentials, credential_rx), verifier.clone(), sender.clone(), inputs, transport) => result,
         };
         let review = verifier.review.lock().unwrap().take();
         let event = if let Some(review) = review {
@@ -230,12 +241,15 @@ async fn run(
     verifier: Arc<trust::Verifier>,
     events: mpsc::Sender<Event>,
     mut inputs: mpsc::Receiver<Input>,
+    transport: Option<std::net::SocketAddr>,
 ) -> Result<()> {
     let auth = options.auth;
     let mut stream = tokio::time::timeout(SETUP_TIMEOUT, async {
-        let stream = TcpStream::connect((options.host.as_str(), options.port))
-            .await
-            .context("VNC TCP connection failed")?;
+        let stream = match transport {
+            Some(address) => TcpStream::connect(address).await,
+            None => TcpStream::connect((options.host.as_str(), options.port)).await,
+        }
+        .context("VNC TCP connection failed")?;
         stream.set_nodelay(true)?;
         let stream =
             crate::vnc_preflight::negotiate_auth(stream, CancellationToken::new(), options.auth)

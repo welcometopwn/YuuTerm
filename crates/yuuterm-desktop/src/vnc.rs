@@ -60,7 +60,16 @@ impl DesktopVnc {
             .cloned()
             .ok_or("VNC session is closed".into())
     }
+    #[cfg(test)]
     fn open(&self, profile: Profile, trust: VncTrust) -> Result<u64, String> {
+        self.open_via(profile, trust, None)
+    }
+    fn open_via(
+        &self,
+        profile: Profile,
+        trust: VncTrust,
+        forward: Option<super::ssh_gateways::Forward>,
+    ) -> Result<u64, String> {
         let mut entries = lock(&self.entries)?;
         // The renderer's double-click guard is not a backend resource bound.
         // Check and insert under the same lock, including concurrent IPC calls.
@@ -71,8 +80,7 @@ impl DesktopVnc {
             }
         }
         entries.retain(|_, entry| entry.lock().is_ok_and(|s| s.profile.id != profile.id));
-        let handle =
-            wire::start_interactive(options(&profile), trust.clone()).map_err(|e| e.to_string())?;
+        let handle = start_transport(&profile, trust.clone(), forward.as_ref())?;
         let id = NEXT
             .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
                 (n < (1 << 53) - 1).then_some(n + 1)
@@ -107,6 +115,7 @@ impl DesktopVnc {
                 baseline: None,
                 cursor: None,
                 saved_password: None,
+                forward,
             })),
         );
         Ok(id)
@@ -178,6 +187,21 @@ struct Session {
     baseline: Option<Arc<Framebuffer>>,
     cursor: Option<Arc<Cursor>>,
     saved_password: Option<super::credentials::Target>,
+    forward: Option<super::ssh_gateways::Forward>,
+}
+fn start_transport(
+    profile: &Profile,
+    trust: VncTrust,
+    forward: Option<&super::ssh_gateways::Forward>,
+) -> Result<Handle, String> {
+    if !profile.gateways.is_empty() && forward.is_none() {
+        return Err("SSH gateway transport ended; reconnect opens a new one".into());
+    }
+    match forward {
+        Some(f) => wire::start_interactive_via(options(profile), trust, f.address),
+        None => wire::start_interactive(options(profile), trust),
+    }
+    .map_err(|e| e.to_string())
 }
 fn options(profile: &Profile) -> wire::Options {
     wire::Options {
@@ -209,6 +233,7 @@ impl Session {
 
     fn disconnect(&mut self) {
         self.handle.cancel();
+        self.forward.take();
         self.review = None;
         self.status.prompt = None;
         self.status.connected = false;
@@ -221,6 +246,14 @@ impl Session {
         self.status.cursor = None;
     }
     fn receive(&mut self) {
+        if let Some(forward) = &self.forward {
+            let snapshot = forward.live.snapshot();
+            if snapshot.finished {
+                self.disconnect();
+                self.status.status = snapshot.status;
+                return;
+            }
+        }
         for _ in 0..2 {
             let Ok(event) = self.handle.events.try_recv() else {
                 break;
@@ -253,6 +286,7 @@ impl Session {
                     }
                     self.status.connected = false;
                     self.status.finished = true;
+                    self.forward.take();
                     self.status.status = reason;
                     self.status.prompt = None;
                 }
@@ -411,7 +445,8 @@ pub async fn vnc_open(
         .await
         .map_err(|e| e.to_string())?
         .clone();
-    state.vnc.open(profile, trust)
+    let forward = super::ssh_gateways::prepare(&window, &state, &profile).await?;
+    state.vnc.open_via(profile, trust, forward)
 }
 #[tauri::command]
 pub async fn vnc_poll(
@@ -461,7 +496,7 @@ pub async fn vnc_decide(
         s.status.status = error.clone();
         return Err(error);
     }
-    s.handle = wire::start_interactive(options(&s.profile), trust).map_err(|e| e.to_string())?;
+    s.handle = start_transport(&s.profile, trust, s.forward.as_ref())?;
     s.status.status = "Revalidating approved VNC identity…".into();
     Ok(())
 }

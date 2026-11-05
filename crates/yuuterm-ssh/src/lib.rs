@@ -31,6 +31,12 @@ use yuuterm_core::{Profile, Protocol};
 
 pub use zeroize::Zeroizing;
 
+/// One resolved SSH gateway with its runtime-only password.
+pub struct Hop {
+    pub gateway: yuuterm_core::ManualGateway,
+    pub password: Option<Zeroizing<String>>,
+}
+
 pub type Wake = Arc<dyn Fn() + Send + Sync>;
 
 /// Enumeration does not open a port or change device control lines.
@@ -55,6 +61,8 @@ pub fn serial_ports() -> anyhow::Result<Vec<String>> {
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct TrustPrompt {
     pub host: String,
+    /// "Target" or "Gateway N of M".
+    pub role: String,
     pub algorithm: String,
     pub fingerprint: String,
 }
@@ -85,6 +93,8 @@ pub struct Snapshot {
     /// True only after a definitive SSH password refusal; discard/re-prompt credentials.
     /// Network, trust, timeout and unsupported challenge failures leave this false.
     pub password_rejected: bool,
+    /// The gateway (0-based) whose password was refused; `None` for the target.
+    pub rejected_gateway: Option<usize>,
     pub trust: Option<TrustPrompt>,
     pub terminal: Arc<terminal::TerminalView>,
     pub path: String,
@@ -227,7 +237,7 @@ impl Engine {
         wake: Wake,
         password: Option<Zeroizing<String>>,
     ) -> anyhow::Result<LiveSession> {
-        self.connect_inner(profile, wake, None, None, password)
+        self.connect_inner(profile, wake, None, None, (password, Vec::new(), None))
     }
 
     /// Streaming equivalent of `connect_with_password`; existing callers remain unchanged.
@@ -237,12 +247,58 @@ impl Engine {
         wake: Wake,
         password: Option<Zeroizing<String>>,
     ) -> anyhow::Result<(LiveSession, mpsc::Receiver<Vec<u8>>)> {
+        self.connect_streaming_via(profile, Vec::new(), wake, password)
+    }
+
+    /// SSH session through `hops` with the engine's own headless terminal.
+    pub fn connect_via(
+        &self,
+        profile: Profile,
+        hops: Vec<Hop>,
+        wake: Wake,
+        password: Option<Zeroizing<String>>,
+    ) -> anyhow::Result<LiveSession> {
+        self.connect_inner(profile, wake, None, None, (password, hops, None))
+    }
+
+    /// Streaming SSH session through `hops`, in connection order.
+    pub fn connect_streaming_via(
+        &self,
+        profile: Profile,
+        hops: Vec<Hop>,
+        wake: Wake,
+        password: Option<Zeroizing<String>>,
+    ) -> anyhow::Result<(LiveSession, mpsc::Receiver<Vec<u8>>)> {
         let (tx, rx) = mpsc::channel(32);
         Ok((
-            self.connect_inner(profile, wake, Some(tx), None, password)?,
+            self.connect_inner(profile, wake, Some(tx), None, (password, hops, None))?,
             rx,
         ))
     }
+    /// A loopback-only forward for one non-SSH session. Keep the LiveSession
+    /// until the protocol closes; its trust/status/cancellation API is unchanged.
+    pub fn forward_via(
+        &self,
+        profile: Profile,
+        hops: Vec<Hop>,
+        wake: Wake,
+    ) -> anyhow::Result<(LiveSession, std::net::SocketAddr)> {
+        anyhow::ensure!(!hops.is_empty(), "A forward requires an SSH gateway");
+        anyhow::ensure!(
+            matches!(
+                profile.protocol,
+                Protocol::Rdp | Protocol::Vnc | Protocol::Telnet
+            ),
+            "Forwarding requires RDP, VNC or TELNET"
+        );
+        let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))?;
+        listener.set_nonblocking(true)?;
+        let address = listener.local_addr()?;
+        let session =
+            self.connect_inner(profile, wake, None, None, (None, hops, Some(listener)))?;
+        Ok((session, address))
+    }
+
     /// Runtime-only opt-in for protocol integration with explicit local credentials.
     pub fn connect_x11(
         &self,
@@ -255,7 +311,7 @@ impl Engine {
             wake,
             None,
             Some(Arc::new(x11::Forward::new(local))),
-            None,
+            (None, Vec::new(), None),
         )
     }
 
@@ -265,14 +321,37 @@ impl Engine {
         wake: Wake,
         output: Option<mpsc::Sender<Vec<u8>>>,
         x11: Option<Arc<x11::Forward>>,
-        password: Option<Zeroizing<String>>,
+        (password, hops, listener): (
+            Option<Zeroizing<String>>,
+            Vec<Hop>,
+            Option<std::net::TcpListener>,
+        ),
     ) -> anyhow::Result<LiveSession> {
         profile.validate().map_err(anyhow::Error::msg)?;
+        anyhow::ensure!(
+            hops.is_empty()
+                || matches!(profile.protocol, Protocol::Ssh | Protocol::Telnet)
+                || listener.is_some(),
+            "This protocol requires the gateway forward API"
+        );
+        anyhow::ensure!(
+            hops.len() <= yuuterm_core::MAX_GATEWAYS,
+            "Use up to 4 SSH gateways"
+        );
+        for hop in &hops {
+            hop.gateway.validate().map_err(anyhow::Error::msg)?;
+            anyhow::ensure!(
+                hop.password.as_ref().is_none_or(|p| p.len() <= 16 * 1024)
+                    && (hop.password.is_none()
+                        || hop.gateway.auth == yuuterm_core::SshAuth::Password),
+                "Gateway password requires password authentication within 16 KiB"
+            );
+        }
         anyhow::ensure!(
             matches!(
                 profile.protocol,
                 Protocol::Ssh | Protocol::Telnet | Protocol::Serial | Protocol::Local
-            ),
+            ) || listener.is_some(),
             "Only SSH, TELNET, SERIAL and local terminals are implemented"
         );
         let is_ssh = profile.protocol == Protocol::Ssh;
@@ -297,7 +376,9 @@ impl Engine {
             "Set the SSH username in session settings first"
         );
         let trust = self.trust.lock().unwrap_or_else(|e| e.into_inner());
-        if is_ssh && let Err(e) = &*trust {
+        if (is_ssh || !hops.is_empty())
+            && let Err(e) = &*trust
+        {
             anyhow::bail!("{e}");
         }
         drop(trust);
@@ -319,6 +400,7 @@ impl Engine {
             connected: false,
             finished: false,
             password_rejected: false,
+            rejected_gateway: None,
             trust: None,
             terminal: terminal::Terminal::new().view(),
             path: String::new(),
@@ -348,6 +430,7 @@ impl Engine {
             x11,
             cancel: cancel.clone(),
             host: format!("[{}]:{}", profile.host.to_ascii_lowercase(), profile.port),
+            role: "Target".into(),
             store: self.trust.clone(),
             state: state_tx.clone(),
             reply: trust_reply,
@@ -366,11 +449,25 @@ impl Engine {
                             *live_x11.lock().unwrap_or_else(|e| e.into_inner()) = Some(forward.clone());
                             handler.x11 = Some(forward);
                         }
-                        if is_ssh { ssh::run((profile, password), handler, rx, &state_tx, wake.clone(), output, (file_tx, file_rx)).await }
+                        if let Some(listener) = listener {
+                            drop(file_rx); drop(file_tx);
+                            ssh::forward(profile, hops, handler, tokio::net::TcpListener::from_std(listener)?, &state_tx, wake.clone(), None).await
+                        } else if profile.protocol == Protocol::Telnet && !hops.is_empty() {
+                            drop(file_rx); drop(file_tx);
+                            let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).await?;
+                            let address = listener.local_addr()?;
+                            let mut local = profile.clone();
+                            local.host = address.ip().to_string(); local.port = address.port();
+                            let (ready, prepared) = oneshot::channel();
+                            tokio::select! {
+                                r = ssh::forward(profile, hops, handler, listener, &state_tx, wake.clone(), Some(ready)) => r,
+                                r = telnet::run(local, rx, &state_tx, wake.clone(), output, Some(prepared)) => r,
+                            }
+                        } else if is_ssh { ssh::run((profile, password, hops), handler, rx, &state_tx, wake.clone(), output, (file_tx, file_rx)).await }
                         else { drop(handler);drop(file_rx);drop(file_tx);
                             if is_local { local::run(profile,rx,state_tx.clone(),wake.clone(),output,cancel.clone()).await }
                             else if is_serial { serial::run(profile,rx,state_tx.clone(),wake.clone(),output,cancel.clone()).await }
-                            else { telnet::run(profile,rx,&state_tx,wake.clone(),output).await }
+                            else { telnet::run(profile,rx,&state_tx,wake.clone(),output,None).await }
                         }
                     } => result,
                 };
@@ -381,7 +478,11 @@ impl Engine {
                     s.connected = false;
                     s.finished = true;
                     s.trust = None;
-                    s.password_rejected = result.as_ref().err().is_some_and(|e| e.is::<ssh::PasswordRejected>());
+                    let error = result.as_ref().err();
+                    let gateway = error.and_then(|e| e.downcast_ref::<ssh::GatewayError>());
+                    s.rejected_gateway = gateway.filter(|g| g.password_rejected()).map(|g| g.index);
+                    s.password_rejected = s.rejected_gateway.is_some()
+                        || error.is_some_and(|e| e.is::<ssh::PasswordRejected>());
                     s.status = match result {
                         Ok(()) => "Disconnected".into(),
                         Err(e) => format!("{e:#}"),
