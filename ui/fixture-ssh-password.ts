@@ -14,6 +14,18 @@ export async function checkSshPasswordEditor(
     () => !!document.querySelector("dialog[open]"),
     "New SSH editor opens for password mode check",
   );
+  const heights: number[] = [];
+  for (const name of ["connection", "terminal", "statistics", "connection"]) {
+    document.getElementById(`session-tab-${name}`)!.click();
+    await new Promise((r) => setTimeout(r, 80));
+    heights.push(
+      document.querySelector<HTMLElement>("dialog[open]")!.offsetHeight,
+    );
+  }
+  await until(
+    () => heights.every((h) => h === heights[0]),
+    "SSH session editor keeps one height across all sections",
+  );
   const select = Array.from(
     document.querySelectorAll<HTMLSelectElement>("dialog[open] select"),
   ).find((s) => Array.from(s.options).some((o) => o.value === "WindowsAgent"))!;

@@ -6,6 +6,9 @@ import type { Bootstrap } from "./types";
 // No password is read by this module. The host runner answers native CredUI.
 export async function checkTelnetExternal(ids: number[], checks: string[]) {
   const profile = (await invoke<Bootstrap>("bootstrap")).prefs.profiles[0];
+  await (
+    await import("./fixture-gateway-presentation")
+  ).checkGatewayPresentation(checks);
   const pane = () =>
     document.querySelector<HTMLElement>(
       `.pane[data-profile-id="${profile.id}"]`,
@@ -318,6 +321,10 @@ export async function checkTelnetExternal(ids: number[], checks: string[]) {
       !rows().includes(profile.host),
     "Real terminal is cleared of account and endpoint before retaining evidence",
   );
+  await (
+    await import("./fixture-gateway-presentation")
+  ).showGatewayEditor(checks);
+  await (await import("./fixture-gateway-presentation")).redactGatewayLabels();
   // The clear-screen/scrollback sequences and visible output above come from
   // the real server. Redact only endpoint/account labels afterwards.
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);

@@ -40,9 +40,20 @@ pub fn export(prefs: &Preferences) -> Result<Vec<u8>, String> {
             .cloned()
             .map(|mut p| {
                 p.credential_id.clear();
-                p
+                for gateway in &mut p.gateways {
+                    if let crate::Gateway::Saved { profile_id } = gateway {
+                        let source = prefs
+                            .profiles
+                            .iter()
+                            .find(|s| s.id == *profile_id)
+                            .ok_or("A gateway session no longer exists")?;
+                        *gateway = crate::Gateway::Manual(crate::gateway_from_profile(source));
+                    }
+                }
+                crate::gateway::clear_gateway_credentials(&mut p);
+                Ok(p)
             })
-            .collect(),
+            .collect::<Result<_, String>>()?,
     };
     let bytes = serde_json::to_vec_pretty(&document).map_err(|_| "Cannot encode sessions")?;
     if bytes.len() > MAX_BYTES {
@@ -71,6 +82,13 @@ pub fn parse(bytes: &[u8]) -> Result<Vec<Profile>, String> {
     for p in &mut check.profiles {
         p.logging = Default::default();
         p.credential_id.clear();
+        if p.gateways
+            .iter()
+            .any(|g| matches!(g, crate::Gateway::Saved { .. }))
+        {
+            return Err("Imported sessions cannot reference saved sessions as gateways".into());
+        }
+        crate::gateway::clear_gateway_credentials(p);
     }
     Ok(check.profiles)
 }
@@ -95,6 +113,7 @@ pub fn merge(current: &Preferences, incoming: &[Profile]) -> Result<Preferences,
         p.id = next;
         p.logging = Default::default();
         p.credential_id.clear();
+        crate::gateway::clear_gateway_credentials(&mut p);
         p.temporary = false;
         if candidate.profiles.iter().any(|v| v.name == p.name) {
             for n in 1..=1001 {
@@ -313,5 +332,74 @@ mod tests {
         let saved = merge(&current, &incoming).unwrap();
         assert_eq!(saved.profiles.len(), 2);
         assert!(!saved.profiles[1].temporary);
+    }
+
+    #[test]
+    fn export_turns_references_into_manual_hops() {
+        let mut prefs = Preferences::fresh();
+        let gw = Profile {
+            id: 2,
+            name: "Bastion".into(),
+            host: "bastion.example".into(),
+            port: 2222,
+            username: "admin".into(),
+            credential_id: "a3bb189e-8bf9-3888-9912-ace4e6543002".into(),
+            ..Default::default()
+        };
+        let mut target = Profile {
+            id: 1,
+            name: "Target".into(),
+            host: "target.example".into(),
+            ..Default::default()
+        };
+        target.gateways = vec![
+            crate::Gateway::Saved { profile_id: 2 },
+            crate::Gateway::Manual(crate::ManualGateway {
+                host: "jump".into(),
+                username: "u".into(),
+                credential_id: "b3bb189e-8bf9-3888-9912-ace4e6543002".into(),
+                ..Default::default()
+            }),
+        ];
+        prefs.profiles = vec![target, gw];
+        let text = String::from_utf8(export(&prefs).unwrap()).unwrap();
+        assert!(!text.contains("Saved"), "{text}");
+        assert!(!text.contains("credential_id"), "{text}");
+        let back = parse(text.as_bytes()).unwrap();
+        let crate::Gateway::Manual(hop) = &back[0].gateways[0] else {
+            panic!("reference exported as reference");
+        };
+        assert_eq!((hop.host.as_str(), hop.port), ("bastion.example", 2222));
+    }
+
+    #[test]
+    fn import_rejects_invalid_gateways() {
+        let doc = |gateways: &str| {
+            format!(
+                r#"{{"format":"YuuTerm sessions","version":1,"profiles":[{{"id":1,"name":"T","protocol":"Ssh","host":"t","port":22,"username":"","font_size":null,"gateways":{gateways}}}]}}"#
+            )
+        };
+        let hop = r#"{"kind":"Manual","host":"b","username":"u"}"#;
+        assert!(parse(doc(&format!("[{hop}]")).as_bytes()).is_ok());
+        assert!(parse(doc(&format!("[{hop},{hop},{hop},{hop},{hop}]")).as_bytes()).is_err());
+        assert!(parse(doc(r#"[{"kind":"Saved","profile_id":1}]"#).as_bytes()).is_err());
+        assert!(parse(doc(r#"[{"kind":"Saved","profile_id":5}]"#).as_bytes()).is_err());
+        assert!(
+            parse(
+                doc(r#"[{"kind":"Manual","host":"-oProxyCommand=x","username":"u"}]"#).as_bytes()
+            )
+            .is_err()
+        );
+        let with_identity = doc(
+            r#"[{"kind":"Manual","host":"b","username":"u","credential_id":"a3bb189e-8bf9-3888-9912-ace4e6543002"}]"#,
+        );
+        let imported = parse(with_identity.as_bytes()).unwrap();
+        let crate::Gateway::Manual(h) = &imported[0].gateways[0] else {
+            panic!()
+        };
+        assert!(
+            h.credential_id.is_empty(),
+            "imports never carry hop identities"
+        );
     }
 }

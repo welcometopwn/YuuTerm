@@ -901,3 +901,28 @@ fn transport_failures_explain_the_lost_connection() {
     let refused = anyhow::anyhow!("VNC authentication refused");
     assert_eq!(close_reason(&refused), "VNC authentication refused");
 }
+
+#[tokio::test]
+async fn loopback_transport_keeps_original_certificate_name_and_pin_endpoint() {
+    let fixture = Fixture::new("target.example", false);
+    let dir = tempfile::tempdir().unwrap();
+    let trust = store(&dir).await;
+    let listener = listener().await;
+    let address = listener.local_addr().unwrap();
+    let server = fixture.server.clone();
+    let peer = tokio::spawn(async move {
+        let _ = tls_peer(&listener, server, TlsAuth::Plain).await;
+    });
+    let mut options = fixture.options(5900, TlsAuth::Plain, false);
+    options.host = "target.example".into();
+    let mut handle = start_interactive_via(options, trust, address).unwrap();
+    match event(&mut handle).await {
+        Event::TrustRequired { review, .. } => {
+            assert_eq!(review.endpoint, "[target.example]:5900");
+            assert_eq!(review.sha256, trust::fingerprint(&fixture.certificate));
+        }
+        _ => panic!("Expected target certificate review through loopback transport"),
+    }
+    handle.shutdown().await.unwrap();
+    peer.await.unwrap();
+}

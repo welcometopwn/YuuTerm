@@ -40,6 +40,8 @@ struct SshFixture {
     offers: Arc<Mutex<Vec<String>>>,
     pub connections: Arc<AtomicUsize>,
     pub resized: Arc<AtomicBool>,
+    direct_tcpip: Arc<Mutex<Vec<(String, u32)>>>,
+    allow_forwarding: Arc<AtomicBool>,
 }
 
 impl Drop for SshFixture {
@@ -78,6 +80,35 @@ impl server::Handler for SshFixture {
         } else {
             Ok(server::Auth::reject())
         }
+    }
+    /// Gateway role: bridge `direct-tcpip` to a loopback port, as sshd does.
+    async fn channel_open_direct_tcpip(
+        &mut self,
+        channel: Channel<server::Msg>,
+        host: &str,
+        port: u32,
+        _: &str,
+        _: u32,
+        reply: server::ChannelOpenHandle,
+        _: &mut server::Session,
+    ) -> anyhow::Result<()> {
+        self.direct_tcpip.lock().unwrap().push((host.into(), port));
+        if !self.allow_forwarding.load(Ordering::SeqCst) || host != "127.0.0.1" {
+            reply
+                .reject(russh::ChannelOpenFailure::AdministrativelyProhibited)
+                .await;
+            return Ok(());
+        }
+        let Ok(mut target) = tokio::net::TcpStream::connect((host, port as u16)).await else {
+            reply.reject(russh::ChannelOpenFailure::ConnectFailed).await;
+            return Ok(());
+        };
+        reply.accept().await;
+        tokio::spawn(async move {
+            let mut stream = channel.into_stream();
+            let _ = tokio::io::copy_bidirectional(&mut stream, &mut target).await;
+        });
+        Ok(())
     }
     async fn channel_open_session(
         &mut self,
@@ -229,6 +260,9 @@ pub struct Fixture {
     pub offers: Arc<Mutex<Vec<String>>>,
     pub connections: Arc<AtomicUsize>,
     pub resized: Arc<AtomicBool>,
+    /// `direct-tcpip` requests seen as a gateway: (host, port).
+    pub direct_tcpip: Arc<Mutex<Vec<(String, u32)>>>,
+    pub allow_forwarding: Arc<AtomicBool>,
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
@@ -261,6 +295,9 @@ impl Fixture {
         let shared_files = files.clone();
         let x11 = Arc::new(X11Control::default());
         let x11_shared = x11.clone();
+        let direct_tcpip = Arc::new(Mutex::new(Vec::new()));
+        let allow_forwarding = Arc::new(AtomicBool::new(true));
+        let (d, f) = (direct_tcpip.clone(), allow_forwarding.clone());
         let task = tokio::spawn(async move {
             let mut children = tokio::task::JoinSet::new();
             loop {
@@ -269,7 +306,7 @@ impl Fixture {
                         let (socket,_)=result.unwrap();
                         let config=Arc::new(server::Config {keys:vec![keys[usize::from(r.load(Ordering::SeqCst))].clone()],auth_rejection_time:Duration::from_millis(1),..Default::default()});
                         c.fetch_add(1,Ordering::SeqCst);
-                        let handler=SshFixture {offers:shared_offers.clone(),x11:x11_shared.clone(),pty_requested:false,stats_count:0,posix:posix_shared.clone(),files:shared_files.clone(),key:accepted_key.clone(),channels:HashMap::new(),authenticated:a.clone(),connections:c.clone(),resized:z.clone()};
+                        let handler=SshFixture {offers:shared_offers.clone(),x11:x11_shared.clone(),pty_requested:false,stats_count:0,posix:posix_shared.clone(),files:shared_files.clone(),key:accepted_key.clone(),channels:HashMap::new(),authenticated:a.clone(),connections:c.clone(),resized:z.clone(),direct_tcpip:d.clone(),allow_forwarding:f.clone()};
                         children.spawn(async move {if let Ok(session)=server::run_stream(config,socket,handler).await {let _=session.await;}});
                     }
                     _=children.join_next(),if !children.is_empty()=>{}
@@ -287,6 +324,8 @@ impl Fixture {
             offers,
             connections,
             resized,
+            direct_tcpip,
+            allow_forwarding,
         }
     }
 }

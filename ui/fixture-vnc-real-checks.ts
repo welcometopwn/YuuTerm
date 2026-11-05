@@ -72,6 +72,9 @@ export async function checkVncRealServer() {
     );
   try {
     checks.push(`marker ${marker}`);
+    await (
+      await import("./fixture-gateway-presentation")
+    ).checkGatewayPresentation(checks);
     await until(
       () => !!dialog("Verify VNC certificate"),
       "Unknown real server certificate requires review",
@@ -297,6 +300,12 @@ export async function checkVncRealServer() {
     );
     // Let queued input drain before the capture shutdown closes the session.
     await sleep(1000);
+    await (
+      await import("./fixture-gateway-presentation")
+    ).showGatewayEditor(checks);
+    await (
+      await import("./fixture-gateway-presentation")
+    ).redactGatewayLabels();
     await invoke("capture_report", { checks, passed: true });
     await invoke("capture_ready", { terminalReady: true });
   } catch (error) {

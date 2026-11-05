@@ -231,6 +231,7 @@ impl Preferences {
             .ok_or("Session no longer exists")?;
         // A copy never inherits the source's saved password.
         copy.credential_id.clear();
+        crate::gateway::clear_gateway_credentials(&mut copy);
         copy.id = self
             .profiles
             .iter()
@@ -290,7 +291,7 @@ impl Preferences {
                 return Err("Duplicate or missing session ID.".into());
             }
         }
-        Ok(())
+        crate::gateway::validate_references(&self.profiles)
     }
 }
 
@@ -367,6 +368,31 @@ fn save_to(prefs: &Preferences, path: &Path) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn duplicate_clears_manual_hop_credentials() {
+        let mut prefs = Preferences::fresh();
+        let mut p = Profile {
+            id: 1,
+            name: "Target".into(),
+            host: "t".into(),
+            ..Default::default()
+        };
+        p.gateways = vec![crate::Gateway::Manual(crate::ManualGateway {
+            host: "b".into(),
+            username: "u".into(),
+            credential_id: "a3bb189e-8bf9-3888-9912-ace4e6543002".into(),
+            ..Default::default()
+        })];
+        prefs.profiles = vec![p];
+        let prefs = prefs.with_duplicate(1).unwrap();
+        let copy = prefs.profiles.iter().find(|p| p.id == 2).unwrap();
+        let crate::Gateway::Manual(hop) = &copy.gateways[0] else {
+            panic!()
+        };
+        assert_eq!(hop.host, "b");
+        assert!(hop.credential_id.is_empty());
+    }
+
     #[test]
     fn duplicate_is_inserted_after_its_source_without_copying_credentials() {
         let mut prefs = Preferences::fresh();

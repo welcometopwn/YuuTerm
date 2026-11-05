@@ -49,6 +49,8 @@ fn rdp_probe_enabled() -> bool {
 
 #[cfg(feature = "capture")]
 mod capture;
+mod gateway_capture;
+mod ssh_gateways;
 #[cfg(feature = "capture")]
 mod startup_timing;
 
@@ -62,10 +64,11 @@ struct Session {
     last_files: Option<Arc<Vec<FileEntry>>>,
     file_busy: Arc<Mutex<Option<tokio_util::sync::CancellationToken>>>,
     output_log: Option<output_log::OutputLog>,
-    /// Saved SSH password used for this connection; forgotten if refused.
-    saved_password: Option<credentials::Target>,
-    /// Bookmark that owns the password (an RDP bookmark for remote tools).
-    credential_owner: u64,
+    /// Saved SSH password used for this connection and the bookmark that owns
+    /// it (an RDP bookmark for remote tools); forgotten if refused.
+    saved_password: Option<ssh_gateways::SavedPassword>,
+    /// Saved passwords of the SSH gateways, by hop.
+    saved_gateway_passwords: Vec<Option<ssh_gateways::SavedPassword>>,
     #[cfg(feature = "capture")]
     input_trace: Vec<Vec<u8>>,
 }
@@ -351,11 +354,15 @@ async fn rdp_open(
         .find(|p| p.id == profile_id)
         .cloned()
         .ok_or("Session no longer exists")?;
+    if profile.protocol != yuuterm_core::Protocol::Rdp {
+        return Err("Not an RDP bookmark".into());
+    }
+    let forward = ssh_gateways::prepare(&window, &state, &profile).await?;
     let parent = window.hwnd().map_err(|e| e.to_string())?.0 as usize;
     let (sender, receiver) = tokio::sync::oneshot::channel();
     window
         .run_on_main_thread(move || {
-            let _ = sender.send(rdp::open(parent, profile));
+            let _ = sender.send(rdp::open_via(parent, profile, forward));
         })
         .map_err(|e| e.to_string())?;
     receiver
@@ -564,22 +571,71 @@ async fn rdp_session(
         let (sender, receiver) = tokio::sync::oneshot::channel();
         window
             .run_on_main_thread(move || {
-                let _ = sender.send(rdp::endpoint(id));
+                let _ = sender.send(rdp::endpoint(id).zip(rdp::transport_endpoint(id)));
             })
             .map_err(|e| e.to_string())?;
-        if let Ok(Some((host, port))) = receiver.await {
-            certificate = tauri::async_runtime::spawn_blocking(move || {
-                let fingerprint =
-                    rdp_cert::fingerprint(&host, port, std::time::Duration::from_secs(4)).ok()?;
-                // Only decides whether to skip the prompt; the relay checks the
-                // certificate again on the authenticating connection (rdp_relay).
+        if let Ok(Some(((host, port), (connect_host, connect_port)))) = receiver.await {
+            let gateway = (host.as_str(), port) != (connect_host.as_str(), connect_port);
+            let original_host = host.clone();
+            let probe = tauri::async_runtime::spawn_blocking(move || {
+                let fingerprint = rdp_cert::fingerprint(
+                    &connect_host,
+                    connect_port,
+                    std::time::Duration::from_secs(4),
+                )?;
                 let remembered = rdp_cert::store_path()
                     .is_ok_and(|path| rdp_cert::trusted(&path, &host, port, &fingerprint));
-                Some((fingerprint, remembered))
+                Ok::<_, String>(rdp::Certificate {
+                    fingerprint,
+                    enforce: remembered,
+                    remembered,
+                })
             })
             .await
-            .ok()
-            .flatten();
+            .map_err(|e| e.to_string())
+            .and_then(|result| result);
+            let probe_error = probe.as_ref().err().cloned();
+            certificate = probe.ok();
+            if gateway {
+                let review = certificate.as_mut().ok_or_else(|| {
+                    format!(
+                        "Cannot verify the RDP certificate through the SSH gateway: {}",
+                        probe_error.unwrap_or_default()
+                    )
+                })?;
+                if !review.remembered {
+                    let once = "Connect once";
+                    let remember = "Remember and connect";
+                    let choice = rfd::AsyncMessageDialog::new()
+                        .set_title("Verify RDP server certificate")
+                        .set_description(format!("{original_host}:{port}\nSHA-256: {}\nCompare this fingerprint with a trusted source before connecting.", review.fingerprint))
+                        .set_buttons(rfd::MessageButtons::YesNoCancelCustom(once.into(), remember.into(), "Cancel".into()))
+                        .show().await;
+                    match choice {
+                        rfd::MessageDialogResult::Custom(label) if label == once => {}
+                        rfd::MessageDialogResult::Custom(label) if label == remember => {
+                            let fingerprint = review.fingerprint.clone();
+                            tauri::async_runtime::spawn_blocking(move || {
+                                rdp_cert::remember(
+                                    &rdp_cert::store_path()?,
+                                    &original_host,
+                                    port,
+                                    &fingerprint,
+                                )
+                            })
+                            .await
+                            .map_err(|e| e.to_string())??;
+                            review.remembered = true;
+                        }
+                        _ => {
+                            return Err("RDP certificate was not approved; nothing was sent".into());
+                        }
+                    }
+                }
+                // Every gateway RDP connection is bound to the original target
+                // certificate on the authenticating socket, including trust-once.
+                review.enforce = true;
+            }
         }
     }
     let (sender, receiver) = tokio::sync::oneshot::channel();
@@ -781,6 +837,7 @@ fn delete_profile(
     window: WebviewWindow,
     state: State<Backend>,
     profile_id: u64,
+    detach: Option<bool>,
 ) -> Result<Preferences, String> {
     main_only(&window)?;
     if lock(&state.sessions)?
@@ -801,18 +858,18 @@ fn delete_profile(
     if !c.can_save && !capture_only && !profile.temporary {
         return Err("Settings saving is disabled".into());
     }
-    let mut candidate = c.prefs.clone();
-    candidate.profiles.retain(|p| p.id != profile_id);
-    candidate.validate()?;
+    let candidate = yuuterm_core::session_actions::remove_detaching(
+        &c.prefs,
+        &[profile_id],
+        detach.unwrap_or(false),
+    )?;
     if !capture_only && c.can_save {
         config::save(&candidate)?;
     }
     c.prefs = candidate.clone();
     drop(c);
-    // The bookmark is gone; its saved password must not outlive it.
-    if let Err(e) = rdp::forget_password(&profile) {
-        eprintln!("delete: saved password not removed: {e}");
-    }
+    // The bookmark is gone; its saved passwords must not outlive it.
+    ssh_gateways::forget_passwords(&profile);
     Ok(candidate)
 }
 #[tauri::command]
@@ -835,23 +892,19 @@ fn duplicate_profile(
     c.prefs = candidate.clone();
     Ok(candidate)
 }
-#[tauri::command]
-fn save_profile(
-    window: WebviewWindow,
-    state: State<Backend>,
+/// The validated settings after saving `profile`, and the credential views of
+/// saved passwords that the new settings no longer use (forget them only after
+/// the save succeeded). Saved-password identities stay backend-owned.
+fn plan_profile_save(
+    prefs: &Preferences,
     mut profile: Profile,
-) -> Result<Preferences, String> {
-    main_only(&window)?;
-    let mut c = lock(&state.config)?;
-    let capture_only = cfg!(feature = "capture") && c.fixture;
-    // Quick-connect sessions live in memory only, so they work without saving.
-    if !c.can_save && !capture_only && !profile.temporary {
-        return Err("Settings saving is disabled; the original file is preserved".into());
-    }
+) -> Result<(Preferences, Vec<Profile>), String> {
     profile.validate()?;
-    let mut candidate = c.prefs.clone();
+    let mut candidate = prefs.clone();
+    let mut forget = Vec::new();
     if profile.id == 0 {
         profile.credential_id.clear();
+        ssh_gateways::carry_gateway_credentials(&Profile::default(), &mut profile);
         profile.id = candidate
             .profiles
             .iter()
@@ -871,16 +924,39 @@ fn save_profile(
         profile.credential_id = old.credential_id.clone();
         if !credentials::same_destination(old, &profile) {
             // A changed destination or account never reuses the old password.
-            let _ = rdp::forget_password(old);
+            forget.push(old.clone());
             profile.credential_id.clear();
         }
+        forget.extend(ssh_gateways::carry_gateway_credentials(old, &mut profile));
         *old = profile;
     }
     candidate.validate()?;
+    Ok((candidate, forget))
+}
+#[tauri::command]
+fn save_profile(
+    window: WebviewWindow,
+    state: State<Backend>,
+    profile: Profile,
+) -> Result<Preferences, String> {
+    main_only(&window)?;
+    let mut c = lock(&state.config)?;
+    let capture_only = cfg!(feature = "capture") && c.fixture;
+    // Quick-connect sessions live in memory only, so they work without saving.
+    if !c.can_save && !capture_only && !profile.temporary {
+        return Err("Settings saving is disabled; the original file is preserved".into());
+    }
+    let (candidate, forget) = plan_profile_save(&c.prefs, profile)?;
     if !capture_only && c.can_save {
         config::save(&candidate)?;
     }
     c.prefs = candidate.clone();
+    drop(c);
+    // Only after the new settings are in place: a refused save keeps every
+    // saved password (target and gateway hops).
+    for old in forget {
+        let _ = rdp::forget_password(&old);
+    }
     Ok(candidate)
 }
 #[tauri::command]
@@ -1016,6 +1092,15 @@ fn start_session(
     }
     // Password sign-in: saved password or the native Windows prompt. The prompt
     // is modal and runs other IPC inside it, so no application lock is held.
+    // SSH gateways sign in first, in connection order, before any network I/O.
+    let (hops, saved_gateway_passwords) = if matches!(
+        profile.protocol,
+        yuuterm_core::Protocol::Ssh | yuuterm_core::Protocol::Telnet
+    ) {
+        ssh_gateways::sign_in(window.hwnd().map_err(|e| e.to_string())?, state, &profile)?
+    } else {
+        Default::default()
+    };
     let mut password = None;
     let mut saved_password = None;
     let owner = owner.unwrap_or_else(|| profile.clone());
@@ -1038,7 +1123,10 @@ fn start_session(
         password = Some(zeroize::Zeroizing::new(
             resolved.secret.expose_for_authentication().to_owned(),
         ));
-        saved_password = resolved.saved;
+        saved_password = resolved.saved.map(|target| ssh_gateways::SavedPassword {
+            target,
+            owner: owner.id,
+        });
     }
     let mut sessions = lock(&state.sessions)?;
     if sessions
@@ -1064,7 +1152,12 @@ fn start_session(
     let signal = wake.clone();
     let (live, output) = state
         .engine
-        .connect_streaming_with_password(profile, Arc::new(move || signal.notify_one()), password)
+        .connect_streaming_via(
+            profile,
+            hops,
+            Arc::new(move || signal.notify_one()),
+            password,
+        )
         .map_err(|e| e.to_string())?;
     let id = live.id;
     let protocol = live.snapshot().protocol;
@@ -1094,7 +1187,7 @@ fn start_session(
                 output_log::OutputLog::automatic(log_name, logging, documents_override, id)
             }),
             saved_password,
-            credential_owner: owner.id,
+            saved_gateway_passwords,
             #[cfg(feature = "capture")]
             input_trace: Vec::new(),
         },
@@ -1166,12 +1259,17 @@ fn drain_poll(state: &Backend, id: u64) -> Result<Poll, String> {
     {
         log.stop();
     }
-    if s.live.snapshot().password_rejected
-        && let Some(target) = s.saved_password.take()
+    let snapshot = s.live.snapshot();
+    if snapshot.password_rejected
+        && let Some(saved) = ssh_gateways::take_refused(
+            snapshot.rejected_gateway,
+            &mut s.saved_password,
+            &mut s.saved_gateway_passwords,
+        )
     {
         // Never retry a refused password: forget it; the next prompt says why.
-        let _ = credentials::forget(&target);
-        credentials::mark_refused(s.credential_owner);
+        let _ = credentials::forget(&saved.target);
+        credentials::mark_refused(saved.owner);
     }
     Ok(Poll {
         meta,
@@ -1278,6 +1376,7 @@ fn capture_scope(window: WebviewWindow, state: State<Backend>) -> Result<String,
             | "qol"
             | "vnc"
             | "rdp"
+            | "gateway-rdp"
             | "rdp-hold"
             | "rdp-refused"
             | "rdp-power"
@@ -1330,6 +1429,7 @@ fn capture_report(
         let rdp = matches!(
             std::env::var("YUUTERM_CAPTURE_SCOPE").as_deref(),
             Ok("rdp"
+                | "gateway-rdp"
                 | "rdp-refused"
                 | "rdp-power"
                 | "rdp-network"
@@ -1555,6 +1655,7 @@ fn capture_still(window: WebviewWindow, state: State<Backend>, name: String) -> 
             || !matches!(
                 std::env::var("YUUTERM_CAPTURE_SCOPE").as_deref(),
                 Ok("quick-connect"
+                    | "gateway-rdp"
                     | "local-terminal"
                     | "local-readme"
                     | "qol"
@@ -1652,6 +1753,7 @@ fn rdp_fixture() -> Result<Config, Box<dyn std::error::Error>> {
         username: var("YUUTERM_RDP_FIXTURE_USER")?,
         ..Default::default()
     };
+    profile.gateways = gateway_capture::hops();
     // Optional audio mode for audio-redirection checks.
     if let Ok(audio) = std::env::var("YUUTERM_RDP_FIXTURE_AUDIO") {
         profile.rdp.audio = match audio.as_str() {
@@ -1671,6 +1773,17 @@ fn rdp_fixture() -> Result<Config, Box<dyn std::error::Error>> {
         profile.ssh.auth = yuuterm_core::SshAuth::Password;
     }
     profile.validate()?;
+    if std::env::var("YUUTERM_CAPTURE_SCOPE").as_deref() == Ok("gateway-rdp") {
+        return Ok(Config {
+            prefs: Preferences {
+                profiles: vec![profile],
+                ..Preferences::fresh()
+            },
+            can_save: false,
+            notice: "RDP gateway qualification · Capture only".into(),
+            fixture: true,
+        });
+    }
     let mut password = zeroize::Zeroizing::new(var("YUUTERM_RDP_FIXTURE_PASSWORD")?);
     // "rdp-refused" saves a wrong password to observe the refusal path.
     if std::env::var("YUUTERM_CAPTURE_SCOPE").as_deref() == Ok("rdp-refused") {
@@ -1791,13 +1904,19 @@ fn backend() -> Result<Backend, Box<dyn std::error::Error>> {
     }
     let mut trust = config::path()?.with_file_name("host-keys.json");
     if cfg!(feature = "capture")
-        && let Ok(path) = std::env::var("YUUTERM_CAPTURE_PROFILE")
+        && (std::env::var_os("YUUTERM_CAPTURE_PROFILE").is_some()
+            || std::env::var_os("YUUTERM_CAPTURE_PROFILE_JSON").is_some())
     {
         use std::io::Read;
+        let path = std::env::var("YUUTERM_CAPTURE_PROFILE").ok();
         let mut bytes = Vec::new();
-        std::fs::File::open(&path)?
-            .take(1024 * 1024 + 1)
-            .read_to_end(&mut bytes)?;
+        if let Some(path) = &path {
+            std::fs::File::open(path)?
+                .take(1024 * 1024 + 1)
+                .read_to_end(&mut bytes)?;
+        } else {
+            bytes = std::env::var("YUUTERM_CAPTURE_PROFILE_JSON")?.into_bytes();
+        }
         if bytes.len() > 1024 * 1024 {
             return Err("Capture profile oversized".into());
         }
@@ -1813,6 +1932,13 @@ fn backend() -> Result<Backend, Box<dyn std::error::Error>> {
             && !profile.logging.enabled
             && !profile.ssh.x11_forward
             && profile.credential_id.is_empty();
+        let gateway_fixture = gateway_capture::admitted(&profile) && (windows_fixture || vnc_real);
+        if !capture_gateways_allowed(
+            (windows_fixture && profile.protocol == yuuterm_core::Protocol::Ssh) || gateway_fixture,
+            &profile,
+        ) {
+            return Err("SSH gateways need the explicit external capture admission".into());
+        }
         if !windows_fixture
             && !zsh_fixture
             && !vnc_real
@@ -1830,7 +1956,9 @@ fn backend() -> Result<Backend, Box<dyn std::error::Error>> {
                 "Only an explicitly configured protocol capture fixture is accepted".into(),
             );
         }
-        trust = std::path::Path::new(&path).with_file_name("host-keys.json");
+        if let Some(path) = &path {
+            trust = std::path::Path::new(path).with_file_name("host-keys.json");
+        }
         let count = if windows_fixture || zsh_fixture || vnc_real {
             1
         } else if std::env::var("YUUTERM_CAPTURE_SCOPE").as_deref() == Ok("performance") {
@@ -1915,6 +2043,7 @@ fn backend() -> Result<Backend, Box<dyn std::error::Error>> {
     if matches!(
         std::env::var("YUUTERM_CAPTURE_SCOPE").as_deref(),
         Ok("rdp"
+            | "gateway-rdp"
             | "rdp-hold"
             | "rdp-refused"
             | "rdp-power"
@@ -2059,6 +2188,7 @@ fn main() {
                     let _ = rdp::forget_password(&profile);
                 }
                 if let Some(state) = window.try_state::<Backend>() {
+                    ssh_gateways::cancel_all();
                     state.vnc.close_all();
                 }
                 #[cfg(feature = "capture")]
@@ -2096,6 +2226,7 @@ fn main() {
             rdp_probe_surface,
             rdp_probe_report,
             rdp_open,
+            ssh_gateways::gateway_cancel,
             rdp_session,
             rdp_snapshot,
             forget_saved_password,
@@ -2161,9 +2292,65 @@ fn main() {
         .expect("YuuTerm desktop runtime failed");
 }
 
+/// Capture profiles may name SSH gateways only through the env-matched
+/// external admission; loopback and zsh fixtures stay direct.
+fn capture_gateways_allowed(external: bool, profile: &Profile) -> bool {
+    external || profile.gateways.is_empty()
+}
+
 #[cfg(test)]
 mod tests {
     use super::ConnectAdmission;
+    #[test]
+    fn refused_save_forgets_no_password() {
+        let id = "a3bb189e-8bf9-3888-9912-ace4e6543002";
+        let mut prefs = yuuterm_core::config::Preferences::fresh();
+        let mut a = yuuterm_core::Profile {
+            id: 1,
+            name: "A".into(),
+            host: "a.test".into(),
+            ..Default::default()
+        };
+        a.gateways = vec![yuuterm_core::Gateway::Saved { profile_id: 2 }];
+        let b = yuuterm_core::Profile {
+            id: 2,
+            name: "B".into(),
+            host: "b.test".into(),
+            credential_id: id.into(),
+            ..Default::default()
+        };
+        prefs.profiles = vec![a, b.clone()];
+        // B is A's gateway: switching it to TELNET is refused and forgets nothing.
+        let mut telnet = b.clone();
+        telnet.protocol = yuuterm_core::Protocol::Telnet;
+        telnet.port = 23;
+        assert!(super::plan_profile_save(&prefs, telnet).is_err());
+        // A real destination change saves and only then lists the old password.
+        let mut moved = b.clone();
+        moved.host = "moved.test".into();
+        let (saved, forget) = super::plan_profile_save(&prefs, moved).unwrap();
+        assert_eq!(saved.profiles[1].host, "moved.test");
+        assert!(saved.profiles[1].credential_id.is_empty());
+        assert_eq!(forget.len(), 1);
+        assert_eq!(forget[0].credential_id, id);
+        assert_eq!(forget[0].host, "b.test");
+    }
+    #[test]
+    fn capture_gateways_only_with_the_explicit_external_admission() {
+        let mut p = yuuterm_core::Profile {
+            host: "127.0.0.1".into(),
+            username: "fixture".into(),
+            ..Default::default()
+        };
+        assert!(super::capture_gateways_allowed(false, &p));
+        p.gateways = vec![yuuterm_core::Gateway::Manual(yuuterm_core::ManualGateway {
+            host: "198.51.100.7".into(),
+            username: "u".into(),
+            ..Default::default()
+        })];
+        assert!(!super::capture_gateways_allowed(false, &p));
+        assert!(super::capture_gateways_allowed(true, &p));
+    }
     #[test]
     fn one_connect_per_rdp_session_at_a_time() {
         let first = ConnectAdmission::enter(u64::MAX - 1).unwrap();

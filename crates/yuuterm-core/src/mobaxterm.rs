@@ -242,9 +242,78 @@ fn bookmark(
             };
         }
     }
+    p.gateways = import_gateways(protocol, &fields)?;
     p.validate()
         .map_err(|_| "Invalid session name, endpoint or settings")?;
     Ok(p)
+}
+
+/// Protocol-specific metadata slots, not commands or credential sections.
+fn import_gateways(
+    protocol: Protocol,
+    fields: &[&str],
+) -> Result<Vec<crate::Gateway>, &'static str> {
+    let (host, key) = match protocol {
+        Protocol::Ssh => (8, 15),
+        Protocol::Telnet => (6, 9),
+        Protocol::Rdp => (13, 18),
+        Protocol::Vnc => (5, 8),
+        _ => return Ok(Vec::new()),
+    };
+    let hosts = fields.get(host).copied().unwrap_or("");
+    if hosts.is_empty() {
+        if [host + 1, host + 2, key]
+            .iter()
+            .any(|i| fields.get(*i).is_some_and(|s| !s.is_empty()))
+        {
+            return Err("Gateway fields have no gateway host");
+        }
+        return Ok(Vec::new());
+    }
+    let hosts: Vec<_> = hosts.split("__PIPE__").collect();
+    if hosts.len() > crate::MAX_GATEWAYS {
+        return Err("Use up to 4 SSH gateways");
+    }
+    let list = |index: usize| -> Result<Vec<&str>, &'static str> {
+        let value = fields.get(index).ok_or("Truncated SSH gateway fields")?;
+        let values: Vec<_> = value.split("__PIPE__").collect();
+        if values.len() != hosts.len() {
+            return Err("Inconsistent SSH gateway lists");
+        }
+        Ok(values)
+    };
+    let ports = list(host + 1)?;
+    let users = list(host + 2)?;
+    let keys = list(key)?;
+    hosts
+        .iter()
+        .enumerate()
+        .map(|(i, host)| {
+            // A drive-relative placeholder cannot be resolved portably on import.
+            if keys[i].contains("_CurrentDrive_") {
+                return Err("Gateway key path needs a manual drive selection");
+            }
+            let hop = crate::ManualGateway {
+                host: (*host).into(),
+                port: ports[i].parse().map_err(|_| "Invalid SSH gateway port")?,
+                username: if users[i] == "<default>" {
+                    String::new()
+                } else {
+                    users[i].into()
+                },
+                auth: if keys[i].is_empty() {
+                    crate::SshAuth::WindowsAgent
+                } else {
+                    crate::SshAuth::KeyFile
+                },
+                key_file: keys[i].into(),
+                ..Default::default()
+            };
+            hop.validate()
+                .map_err(|_| "Invalid SSH gateway endpoint or settings")?;
+            Ok(crate::Gateway::Manual(hop))
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -494,5 +563,95 @@ mod tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod gateway_tests {
+    use super::*;
+    #[test]
+    fn gateway_lists_are_manual_ordered_and_credential_free() {
+        for (protocol, start, key) in [("0", 8, 15), ("4", 13, 18), ("5", 5, 8)] {
+            let mut fields = vec![""; key + 1];
+            fields[0] = protocol;
+            fields[1] = "target.test";
+            fields[2] = "5900";
+            fields[3] = "user";
+            fields[start] = "first.test__PIPE__second.test";
+            fields[start + 1] = "22__PIPE__2222";
+            fields[start + 2] = "jump1__PIPE__jump2";
+            fields[key] = "__PIPE__C:\\keys\\test";
+            let input = format!(
+                "[Bookmarks]\nTarget=#0#{}#ignored-secret\n",
+                fields.join("%")
+            );
+            let preview = parse(input.as_bytes()).unwrap();
+            assert!(preview.skipped.is_empty(), "{:?}", preview.skipped);
+            assert_eq!(preview.profiles[0].gateways.len(), 2);
+            let crate::Gateway::Manual(hop) = &preview.profiles[0].gateways[1] else {
+                panic!()
+            };
+            assert_eq!(hop.host, "second.test");
+            assert_eq!(hop.port, 2222);
+            assert_eq!(hop.username, "jump2");
+            assert!(hop.credential_id.is_empty());
+            assert!(
+                !serde_json::to_string(&preview)
+                    .unwrap()
+                    .contains("ignored-secret")
+            );
+        }
+    }
+    #[test]
+    fn malformed_gateway_entries_are_listed_without_discarding_siblings() {
+        for (hosts, ports, users, keys) in [
+            ("a__PIPE__b", "22", "u__PIPE__v", "__PIPE__"),
+            ("a", "0", "u", ""),
+            ("-oProxyCommand=secret", "22", "u", ""),
+            (
+                "a__PIPE__b__PIPE__c__PIPE__d__PIPE__e",
+                "22__PIPE__22__PIPE__22__PIPE__22__PIPE__22",
+                "u__PIPE__u__PIPE__u__PIPE__u__PIPE__u",
+                "__PIPE____PIPE____PIPE____PIPE__",
+            ),
+            ("a", "22", "u", "_CurrentDrive_:\\key"),
+        ] {
+            let mut f = vec![""; 16];
+            f[0] = "0";
+            f[1] = "target.test";
+            f[2] = "22";
+            f[3] = "u";
+            f[8] = hosts;
+            f[9] = ports;
+            f[10] = users;
+            f[15] = keys;
+            let preview = parse(
+                format!(
+                    "[Bookmarks]\nBad=#0#{}\nGood=#0#0%good.test%22%user\n",
+                    f.join("%")
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+            assert_eq!(preview.profiles.len(), 1, "{hosts}");
+            assert_eq!(preview.profiles[0].name, "Good");
+            assert_eq!(preview.skipped.len(), 1);
+            assert_eq!(preview.skipped[0].line, 2);
+            assert!(!preview.skipped[0].reason.contains("secret"));
+        }
+    }
+    #[test]
+    fn telnet_gateway_uses_its_own_metadata_slots() {
+        let source = b"[Bookmarks]\nTelnet=#98#1%target.example%23%login%%1%jump.example%2299%jumpuser%%0%0%%1080%%%0%-1%0\n";
+        let preview = parse(source).unwrap();
+        assert!(preview.skipped.is_empty());
+        let crate::Gateway::Manual(hop) = &preview.profiles[0].gateways[0] else {
+            panic!()
+        };
+        assert_eq!(
+            (&*hop.host, hop.port, &*hop.username),
+            ("jump.example", 2299, "jumpuser")
+        );
+        assert!(hop.key_file.is_empty());
     }
 }

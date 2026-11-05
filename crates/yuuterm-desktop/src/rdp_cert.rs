@@ -218,8 +218,8 @@ pub fn remembered(path: &Path, host: &str, port: u16, fingerprint: &str) -> bool
         .is_some_and(|f| f == fingerprint)
 }
 
-/// Writes a pin. Only older versions wrote pins in production; kept for the
-/// tests and the review_rdp_store witness, which check the store stays bounded.
+/// Writes the original target pin after explicit "Remember and connect" for a
+/// gateway RDP connection. Also used by the bounded-store tests and witness.
 #[allow(dead_code)]
 pub fn remember(path: &Path, host: &str, port: u16, fingerprint: &str) -> Result<(), String> {
     if fingerprint.len() != 64 || !fingerprint.bytes().all(|b| b.is_ascii_hexdigit()) {

@@ -35,6 +35,16 @@ export async function checkLinuxOpenSsh(ids: number[], checks: string[]) {
     )!.set!.call(input, value);
     input.dispatchEvent(new Event("input", { bubbles: true }));
   };
+  // SSH gateway runs: the header names the hop, the tooltip the path.
+  const via = document.querySelector<HTMLElement>(".endpoint-via");
+  if (via) {
+    if (
+      !via.title.startsWith("This PC → ") ||
+      !via.textContent?.startsWith("via ")
+    )
+      throw Error("Gateway header label or path missing");
+    checks.push(`Session header shows the gateway: ${via.textContent}`);
+  }
   // Markers are assembled by the shell so the echoed command cannot match.
   await send(
     "unset HISTFILE; PS1='YuuTerm test$ '; clear; printf 'native-%s\\n' bash; printf '\\316\\251\\n'",
@@ -310,19 +320,66 @@ export async function checkLinuxOpenSsh(ids: number[], checks: string[]) {
       !rows().includes("yuuterm-test"),
     "Native capture terminal is clear of test account paths",
   );
+  // Gateway runs retain the editor's gateway list instead of the last dialog.
+  if (via) {
+    document
+      .querySelector<HTMLButtonElement>(
+        'dialog[open] button[aria-label="Close dialog"]',
+      )
+      ?.click();
+    button("Sessions")?.click();
+    const edit = () =>
+      document.querySelector<HTMLButtonElement>(".session-row button.edit");
+    await wait(
+      () => !!edit(),
+      "Session list offers editing the gateway session",
+    );
+    edit()!.click();
+    await wait(
+      () => !!document.querySelector(".gateway-settings .gateway-path"),
+      "Editor shows the gateway list and connection path",
+    );
+    document
+      .querySelector(".gateway-settings")!
+      .scrollIntoView({ block: "center" });
+  }
   // Endpoint/account labels only are redacted for retained evidence, after all
   // protocol assertions. There are no fabricated connection or permission states.
   const profile = (
-    await invoke<{ prefs: { profiles: { host: string; username: string }[] } }>(
-      "bootstrap",
-    )
+    await invoke<{
+      prefs: {
+        profiles: {
+          host: string;
+          username: string;
+          gateways?: { host?: string; username?: string }[];
+        }[];
+      };
+    }>("bootstrap")
   ).prefs.profiles[0];
+  // Gateway endpoints are redacted too; longest names first.
+  const names: [string, string][] = [
+    ...(profile.gateways ?? []).flatMap((g): [string, string][] => [
+      [g.host ?? "", "<test-gateway>"],
+      [g.username ?? "", "<test-gateway-account>"],
+    ]),
+    [profile.host, "<test-host>"],
+    [profile.username, "<test-account>"],
+  ];
+  const redact = (text: string) =>
+    names
+      .filter(([name]) => name)
+      .sort((a, b) => b[0].length - a[0].length)
+      .reduce((t, [name, label]) => t.replaceAll(name, label), text);
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   while (walker.nextNode()) {
     const node = walker.currentNode;
-    node.textContent = node
-      .textContent!.replaceAll(profile.host, "<test-host>")
-      .replaceAll(profile.username, "<test-account>");
+    node.textContent = redact(node.textContent!);
   }
+  document
+    .querySelectorAll<HTMLElement>("[title]")
+    .forEach((e) => (e.title = redact(e.title)));
+  document
+    .querySelectorAll<HTMLInputElement>("dialog[open] input")
+    .forEach((e) => (e.value = redact(e.value)));
   input.value = "/home/<test-account>/yuuterm-test/<isolated-run>";
 }

@@ -15,6 +15,15 @@ async fn main() -> anyhow::Result<()> {
             .nth(1)
             .ok_or_else(|| anyhow::anyhow!("Supply a capture fixture output directory"))?,
     );
+    let hold_seconds = std::env::args()
+        .nth(2)
+        .map(|value| value.parse::<u64>())
+        .transpose()?
+        .unwrap_or(180);
+    anyhow::ensure!(
+        (1..=3600).contains(&hold_seconds),
+        "Fixture hold must be between 1 and 3600 seconds"
+    );
     std::fs::create_dir_all(&dir)?;
     let mut agent = tokio::time::timeout(
         std::time::Duration::from_secs(5),
@@ -71,6 +80,20 @@ async fn main() -> anyhow::Result<()> {
         serde_json::to_vec_pretty(&profile)?,
     )?;
     println!("Loopback capture fixture ready");
-    tokio::time::sleep(std::time::Duration::from_secs(180)).await;
+    if std::env::var("YUUTERM_FIXTURE_METRICS").as_deref() == Ok("1") {
+        // Optional server-side counters for external-client qualification. No
+        // keys, input/output bytes or real connection profiles are recorded.
+        let end = tokio::time::Instant::now() + std::time::Duration::from_secs(hold_seconds);
+        while tokio::time::Instant::now() < end {
+            let counters = serde_json::json!({
+                "active_connections": fixture.connections.load(std::sync::atomic::Ordering::SeqCst),
+                "successful_authentications": fixture.auth.load(std::sync::atomic::Ordering::SeqCst),
+            });
+            std::fs::write(dir.join("metrics.json"), serde_json::to_vec(&counters)?)?;
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+    } else {
+        tokio::time::sleep(std::time::Duration::from_secs(hold_seconds)).await;
+    }
     Ok(())
 }

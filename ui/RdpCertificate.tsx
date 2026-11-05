@@ -2,7 +2,13 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 /** Remembered RDP server certificate of a saved session ("Don't ask me again"). */
-export function RdpCertificate({ profileId }: { profileId: number }) {
+export function RdpCertificate({
+  profileId,
+  viaGateway = false,
+}: {
+  profileId: number;
+  viaGateway?: boolean;
+}) {
   const [remembered, setRemembered] = useState<boolean | null>(null);
   const [status, setStatus] = useState("");
   const refresh = () =>
@@ -15,8 +21,14 @@ export function RdpCertificate({ profileId }: { profileId: number }) {
   if (!profileId)
     return (
       <p className="hint">
-        Server certificate: tick "Don't ask me again" in Windows' certificate
-        prompt to connect without it next time.
+        {viaGateway ? (
+          "Server certificate: review the original target fingerprint in the native prompt; choose Remember and connect to retain it."
+        ) : (
+          <>
+            Server certificate: tick "Don't ask me again" in Windows'
+            certificate prompt to connect without it next time.
+          </>
+        )}
       </p>
     );
   return (
@@ -27,7 +39,9 @@ export function RdpCertificate({ profileId }: { profileId: number }) {
           ? "checking…"
           : remembered
             ? "remembered — connects without the prompt while it stays the same"
-            : 'asks on every connection — tick "Don\'t ask me again" in the prompt to remember it'}
+            : viaGateway
+              ? 'asks on every connection — choose "Remember and connect" in the native prompt'
+              : 'asks on every connection — tick "Don\'t ask me again" in the prompt to remember it'}
       </span>
       {remembered && (
         <button

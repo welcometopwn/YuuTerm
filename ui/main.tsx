@@ -10,6 +10,13 @@ import {
 } from "react";
 import { createRoot } from "react-dom/client";
 import { LogRotationSettings } from "./LogRotationSettings";
+import { GatewayEditor } from "./GatewayEditor";
+import {
+  brokenGateways,
+  gatewayDependents,
+  gatewayPath,
+  viaLabel,
+} from "./gateways";
 import { WindowControls } from "./WindowControls";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -35,6 +42,7 @@ import {
   FileText,
   PanelRight,
   ArrowLeftRight,
+  Route,
 } from "lucide-react";
 import { TerminalPane } from "./TerminalPane";
 import {
@@ -402,6 +410,13 @@ function App() {
             void import("./fixture-rdp-checks")
               .then((m) => m.checkRdpRefused())
               .catch(error);
+          if (
+            b.prefs.profiles[0]?.protocol === "Rdp" &&
+            scope === "gateway-rdp"
+          )
+            void import("./fixture-gateway-rdp")
+              .then((m) => m.checkGatewayRdp())
+              .catch(error);
           if (b.prefs.profiles[0]?.protocol === "Rdp" && scope === "rdp")
             void import("./fixture-rdp-checks")
               .then((m) => m.checkRdpFixture(applyLayout))
@@ -511,6 +526,7 @@ function App() {
     if (at >= 0 && at < layout) setFocused(at);
     setPanes((a) => showTab(a, layout, focused, id).panes);
   };
+  const [preparing, setPreparing] = useState<number[]>([]);
   const start = async (
     profileId: number,
     protocolOverride?: Protocol,
@@ -518,6 +534,7 @@ function App() {
   ) => {
     if (starting.current.has(profileId)) return;
     starting.current.add(profileId);
+    setPreparing((a) => [...a, profileId]);
     try {
       const old = liveRef.current.find((l) => l.profileId === profileId);
       if (old && !old.meta?.finished && !replace) return;
@@ -558,6 +575,7 @@ function App() {
       error(e);
     } finally {
       starting.current.delete(profileId);
+      setPreparing((a) => a.filter((id) => id !== profileId));
     }
   };
   // RDP sessions live in native controls with their own incarnation IDs.
@@ -580,6 +598,7 @@ function App() {
       (l) => l.profileId === 2 ** 50 + profileId,
     );
     const l = liveRef.current.find((l) => l.profileId === profileId);
+    await invoke("gateway_cancel", { profileId });
     // Remove the tab from the UI first: its terminal and file panes stop
     // asking about the connection before the backend forgets it.
     const rest = open.filter((i) => i !== profileId);
@@ -1351,7 +1370,16 @@ function App() {
                                 <SessionIcon icon={p.icon} size={16} />
                               )}
                               <span className="session-info">
-                                <span>{p.name}</span>
+                                <span>
+                                  {p.name}
+                                  {!!p.gateways?.length && (
+                                    <Route
+                                      className="gateway-marker"
+                                      size={12}
+                                      aria-label="Uses SSH gateway"
+                                    />
+                                  )}
+                                </span>
                                 <small>
                                   {protocolLabel(p.protocol)}
                                   {sessionDetail(p)
@@ -1646,6 +1674,14 @@ function App() {
                     {l?.meta?.endpoint ??
                       `${p.username ? `${p.username}@` : ""}${p.host}`}
                   </span>
+                  {viaLabel(p, prefs.profiles) && (
+                    <span
+                      className="endpoint-via"
+                      title={gatewayPath(p, prefs.profiles)}
+                    >
+                      {viaLabel(p, prefs.profiles)}
+                    </span>
+                  )}
                   {l &&
                     currentProtocol !== "Rdp" &&
                     currentProtocol !== "Vnc" && (
@@ -1977,14 +2013,26 @@ function App() {
                               ? "Ready to open the remote desktop. Windows asks for credentials and, if needed, about the server certificate."
                               : "Ready to open VNC over validated TLS. You will review unknown certificates and enter a password."}
                     </p>
-                    {connectable(p.protocol) && (
+                    {preparing.includes(p.id) ? (
                       <button
-                        className="primary"
-                        onClick={() => void start(p.id)}
+                        onClick={() =>
+                          void invoke("gateway_cancel", {
+                            profileId: p.id,
+                          }).catch(error)
+                        }
                       >
-                        <Play size={13} />
-                        Connect via {protocolLabel(p.protocol)}
+                        Cancel gateway connection
                       </button>
+                    ) : (
+                      connectable(p.protocol) && (
+                        <button
+                          className="primary"
+                          onClick={() => void start(p.id)}
+                        >
+                          <Play size={13} />
+                          Connect via {protocolLabel(p.protocol)}
+                        </button>
+                      )
                     )}
                     <button
                       className="text-button"
@@ -2138,6 +2186,13 @@ function App() {
             Delete {bulkDeleteIds.length} selected sessions? Their saved
             passwords are removed too. Open connections close first.
           </p>
+          {gatewayDependents(prefs.profiles, bulkDeleteIds) > 0 && (
+            <p className="warning">
+              Used as gateway by{" "}
+              {gatewayDependents(prefs.profiles, bulkDeleteIds)} other sessions.
+              They keep its host, port and user as a manual gateway.
+            </p>
+          )}
           <div className="dialog-actions">
             <button
               disabled={actionBusy}
@@ -2171,6 +2226,7 @@ function App() {
                   setPrefs(
                     await invoke<Preferences>("delete_profiles", {
                       profileIds: ids,
+                      detach: true,
                     }),
                   );
                   setBulkDeleteIds(null);
@@ -2179,7 +2235,9 @@ function App() {
                 })
               }
             >
-              Delete
+              {gatewayDependents(prefs.profiles, bulkDeleteIds) > 0
+                ? "Convert to manual and delete"
+                : "Delete"}
             </button>
           </div>
         </Modal>
@@ -2205,6 +2263,13 @@ function App() {
                 Delete this session? Its saved password is removed too. Open
                 connections close first.
               </p>
+              {gatewayDependents(prefs.profiles, [p.id]) > 0 && (
+                <p className="warning">
+                  Used as gateway by {gatewayDependents(prefs.profiles, [p.id])}{" "}
+                  sessions. They keep its host, port and user as a manual
+                  gateway.
+                </p>
+              )}
               <div className="dialog-actions">
                 <button onClick={() => setDeleteId(null)}>Cancel</button>
                 <button
@@ -2215,14 +2280,16 @@ function App() {
                       if (open.includes(p.id)) await close(p.id);
                       const updated = await invoke<Preferences>(
                         "delete_profile",
-                        { profileId: p.id },
+                        { profileId: p.id, detach: true },
                       );
                       setPrefs(updated);
                       setNotice(`${p.name} deleted`, "success");
                     })().catch(error);
                   }}
                 >
-                  Delete
+                  {gatewayDependents(prefs.profiles, [p.id]) > 0
+                    ? "Convert to manual and delete"
+                    : "Delete"}
                 </button>
               </div>
             </Modal>
@@ -2271,6 +2338,7 @@ function App() {
             globalFontSize={prefs.font_size}
             onIconBusy={setProfileIconBusy}
             groups={groupNames(prefs.profiles)}
+            profiles={prefs.profiles}
           />
           <div className="dialog-actions">
             <button onClick={() => setDraft(null)}>Cancel</button>
@@ -2285,7 +2353,11 @@ function App() {
                     draft.font_size < 8 ||
                     draft.font_size > 32)) ||
                 !draft.name.trim() ||
-                (!draft.host.trim() && draft.protocol !== "Local")
+                (!draft.host.trim() && draft.protocol !== "Local") ||
+                brokenGateways(draft, prefs.profiles).length > 0 ||
+                (draft.gateways ?? []).some(
+                  (g) => g.kind === "Manual" && !g.host.trim(),
+                )
               }
               onClick={() => void save()}
             >
@@ -2324,6 +2396,9 @@ function App() {
             <ShieldCheck size={22} />
             <span>{trust.meta.trust.host}</span>
           </div>
+          {trust.meta.trust.role && trust.meta.trust.role !== "Target" && (
+            <p className="trust-role">{trust.meta.trust.role}</p>
+          )}
           <p>
             Compare this fingerprint with a trusted source before approving.
           </p>
@@ -2398,8 +2473,10 @@ function ProfileEditor({
   globalFontSize,
   onIconBusy,
   groups,
+  profiles,
 }: {
   groups: string[];
+  profiles: Profile[];
   globalFontSize: number;
   statisticsEnabled: boolean;
   value: Profile;
@@ -2454,597 +2531,623 @@ function ProfileEditor({
         value={tab}
         onChange={setTab}
       />
-      <div
-        role="tabpanel"
-        id="session-panel-connection"
-        aria-labelledby="session-tab-connection"
-        hidden={tab !== "connection"}
-      >
-        <label>
-          Session name
-          <input
-            autoFocus
-            value={p.name}
-            maxLength={128}
-            onChange={(e) => change({ name: e.target.value })}
-            placeholder="A name you recognize"
-          />
-        </label>
-        <label>
-          Group
-          <GroupCombo
-            value={p.group ?? ""}
-            options={groups}
-            maxLength={64}
-            onChange={(group) => change({ group })}
-            onBlur={(e) => change({ group: e.target.value.trim() })}
-            placeholder="Optional, for example Development"
-          />
-        </label>
-        <IconPicker
-          value={p.icon}
-          onChange={(icon) => change({ icon })}
-          onBusy={onIconBusy}
-        />
-        {p.protocol !== "Local" && p.protocol !== "Serial" && (
-          <>
-            <label>
-              MAC address
-              <input
-                aria-label="MAC address for Wake-on-LAN"
-                value={p.mac_address ?? ""}
-                maxLength={17}
-                placeholder="02:11:22:33:44:55"
-                onChange={(e) => change({ mac_address: e.target.value })}
-                onBlur={(e) =>
-                  change({
-                    mac_address: e.target.value
-                      .trim()
-                      .replaceAll("-", ":")
-                      .toUpperCase(),
-                  })
-                }
-              />
-            </label>
-            <p>Optional. Used to wake this computer with Wake-on-LAN.</p>
-            {!validMac(p.mac_address ?? "") && (
-              <p role="alert">
-                Enter a valid MAC address, for example 02:11:22:33:44:55.
-              </p>
-            )}
-          </>
-        )}
-        <div className="form-row">
+      <div className="settings-panels">
+        <div
+          role="tabpanel"
+          id="session-panel-connection"
+          aria-labelledby="session-tab-connection"
+          hidden={tab !== "connection"}
+        >
           <label>
-            Protocol
-            <select
-              value={p.protocol}
-              onChange={(e) => {
-                const protocol = e.target.value as Protocol;
-                change({
-                  protocol,
-                  port: {
-                    Ssh: 22,
-                    Telnet: 23,
-                    Rdp: 3389,
-                    Vnc: 5900,
-                    Serial: 0,
-                    Local: 0,
-                  }[protocol],
-                  // A local terminal has no host; other types start empty too.
-                  ...(protocol === "Local" || p.protocol === "Local"
-                    ? { host: "" }
-                    : {}),
-                  ...(protocol === "Local"
-                    ? {
-                        local: p.local ?? {
-                          shell: "PowerShell",
-                          directory: "",
-                        },
-                        ssh: { ...p.ssh, x11_forward: false },
-                      }
-                    : {}),
-                });
-              }}
-            >
-              {(
-                ["Ssh", "Telnet", "Rdp", "Vnc", "Serial", "Local"] as Protocol[]
-              ).map((v) => (
-                <option key={v} value={v}>
-                  {protocolLabel(v)}
-                </option>
-              ))}
-            </select>
+            Session name
+            <input
+              autoFocus
+              value={p.name}
+              maxLength={128}
+              onChange={(e) => change({ name: e.target.value })}
+              placeholder="A name you recognize"
+            />
           </label>
-          {p.protocol === "Local" && (
+          <label>
+            Group
+            <GroupCombo
+              value={p.group ?? ""}
+              options={groups}
+              maxLength={64}
+              onChange={(group) => change({ group })}
+              onBlur={(e) => change({ group: e.target.value.trim() })}
+              placeholder="Optional, for example Office"
+            />
+          </label>
+          <IconPicker
+            value={p.icon}
+            onChange={(icon) => change({ icon })}
+            onBusy={onIconBusy}
+          />
+          {p.protocol !== "Local" && p.protocol !== "Serial" && (
+            <>
+              <label>
+                MAC address
+                <input
+                  aria-label="MAC address for Wake-on-LAN"
+                  value={p.mac_address ?? ""}
+                  maxLength={17}
+                  placeholder="02:11:22:33:44:55"
+                  onChange={(e) => change({ mac_address: e.target.value })}
+                  onBlur={(e) =>
+                    change({
+                      mac_address: e.target.value
+                        .trim()
+                        .replaceAll("-", ":")
+                        .toUpperCase(),
+                    })
+                  }
+                />
+              </label>
+              <p>Optional. Used to wake this computer with Wake-on-LAN.</p>
+              {!validMac(p.mac_address ?? "") && (
+                <p role="alert">
+                  Enter a valid MAC address, for example 02:11:22:33:44:55.
+                </p>
+              )}
+            </>
+          )}
+          <div className="form-row">
             <label>
-              Shell
+              Protocol
               <select
-                value={p.local?.shell ?? "PowerShell"}
-                onChange={(e) =>
+                value={p.protocol}
+                onChange={(e) => {
+                  const protocol = e.target.value as Protocol;
                   change({
-                    local: {
-                      directory: p.local?.directory ?? "",
-                      shell: e.target.value as LocalShell,
-                    },
-                  })
-                }
+                    protocol,
+                    port: {
+                      Ssh: 22,
+                      Telnet: 23,
+                      Rdp: 3389,
+                      Vnc: 5900,
+                      Serial: 0,
+                      Local: 0,
+                    }[protocol],
+                    // A local terminal has no host; other types start empty too.
+                    ...(protocol === "Local" || p.protocol === "Local"
+                      ? { host: "" }
+                      : {}),
+                    // Gateways apply to the four network protocols.
+                    ...(!["Ssh", "Telnet", "Rdp", "Vnc"].includes(protocol)
+                      ? { gateways: [] }
+                      : {}),
+                    ...(protocol === "Local"
+                      ? {
+                          local: p.local ?? {
+                            shell: "PowerShell",
+                            directory: "",
+                          },
+                          ssh: { ...p.ssh, x11_forward: false },
+                        }
+                      : {}),
+                  });
+                }}
               >
                 {(
-                  ["PowerShell", "WindowsPowerShell", "Cmd"] as LocalShell[]
+                  [
+                    "Ssh",
+                    "Telnet",
+                    "Rdp",
+                    "Vnc",
+                    "Serial",
+                    "Local",
+                  ] as Protocol[]
                 ).map((v) => (
                   <option key={v} value={v}>
-                    {localShellLabel(v)}
+                    {protocolLabel(v)}
                   </option>
                 ))}
               </select>
             </label>
-          )}
-          {p.protocol !== "Local" && (
+            {p.protocol === "Local" && (
+              <label>
+                Shell
+                <select
+                  value={p.local?.shell ?? "PowerShell"}
+                  onChange={(e) =>
+                    change({
+                      local: {
+                        directory: p.local?.directory ?? "",
+                        shell: e.target.value as LocalShell,
+                      },
+                    })
+                  }
+                >
+                  {(
+                    ["PowerShell", "WindowsPowerShell", "Cmd"] as LocalShell[]
+                  ).map((v) => (
+                    <option key={v} value={v}>
+                      {localShellLabel(v)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {p.protocol !== "Local" && (
+              <label>
+                {p.protocol === "Serial" ? "COM device" : "Host / IP"}
+                <input
+                  value={p.host}
+                  list={p.protocol === "Serial" ? "serial-ports" : undefined}
+                  maxLength={253}
+                  onChange={(e) => change({ host: e.target.value })}
+                />
+              </label>
+            )}
+            {p.protocol !== "Serial" && p.protocol !== "Local" && (
+              <label className="port">
+                Port
+                <input
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={p.port}
+                  onChange={(e) => change({ port: Number(e.target.value) })}
+                />
+              </label>
+            )}
+          </div>
+          {p.protocol === "Local" && (
             <label>
-              {p.protocol === "Serial" ? "COM device" : "Host / IP"}
+              Start directory
               <input
-                value={p.host}
-                list={p.protocol === "Serial" ? "serial-ports" : undefined}
-                maxLength={253}
-                onChange={(e) => change({ host: e.target.value })}
+                value={p.local?.directory ?? ""}
+                maxLength={1024}
+                placeholder="Empty: your user folder, for example C:\Work"
+                onChange={(e) =>
+                  change({
+                    local: {
+                      shell: p.local?.shell ?? "PowerShell",
+                      directory: e.target.value,
+                    },
+                  })
+                }
               />
             </label>
           )}
-          {p.protocol !== "Serial" && p.protocol !== "Local" && (
-            <label className="port">
-              Port
-              <input
-                type="number"
-                min={1}
-                max={65535}
-                value={p.port}
-                onChange={(e) => change({ port: Number(e.target.value) })}
+          {p.protocol === "Serial" && (
+            <>
+              <datalist id="serial-ports">
+                {ports.map((port) => (
+                  <option key={port} value={port} />
+                ))}
+              </datalist>
+              <button type="button" onClick={refreshPorts}>
+                Refresh COM ports
+              </button>
+              <small role="status">
+                {portStatus ||
+                  "Enter a COM device or refresh the list. Ports are not opened during discovery."}
+              </small>
+              <div className="form-row">
+                <label>
+                  Baud rate
+                  <input
+                    type="number"
+                    min={50}
+                    max={4000000}
+                    value={p.serial.baud_rate}
+                    onChange={(e) =>
+                      change({
+                        serial: {
+                          ...p.serial,
+                          baud_rate: Number(e.target.value),
+                        },
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  Data bits
+                  <select
+                    value={p.serial.data_bits}
+                    onChange={(e) =>
+                      change({
+                        serial: {
+                          ...p.serial,
+                          data_bits: Number(e.target.value),
+                        },
+                      })
+                    }
+                  >
+                    {[5, 6, 7, 8].map((v) => (
+                      <option key={v}>{v}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Parity
+                  <select
+                    value={p.serial.parity}
+                    onChange={(e) =>
+                      change({
+                        serial: {
+                          ...p.serial,
+                          parity: e.target.value as Profile["serial"]["parity"],
+                        },
+                      })
+                    }
+                  >
+                    {["None", "Odd", "Even"].map((v) => (
+                      <option key={v}>{v}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Stop bits
+                  <select
+                    value={p.serial.stop_bits}
+                    onChange={(e) =>
+                      change({
+                        serial: {
+                          ...p.serial,
+                          stop_bits: Number(e.target.value),
+                        },
+                      })
+                    }
+                  >
+                    {[1, 2].map((v) => (
+                      <option key={v}>{v}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <label>
+                Flow control
+                <select
+                  value={p.serial.flow_control}
+                  onChange={(e) =>
+                    change({
+                      serial: {
+                        ...p.serial,
+                        flow_control: e.target
+                          .value as Profile["serial"]["flow_control"],
+                      },
+                    })
+                  }
+                >
+                  <option value="None">None</option>
+                  <option value="Software">XON/XOFF</option>
+                  <option value="Hardware">RTS/CTS</option>
+                </select>
+              </label>
+              <div className="form-row serial-lines">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={p.serial.dtr}
+                    onChange={(e) =>
+                      change({ serial: { ...p.serial, dtr: e.target.checked } })
+                    }
+                  />
+                  Assert DTR on connect
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    disabled={p.serial.flow_control === "Hardware"}
+                    checked={p.serial.rts}
+                    onChange={(e) =>
+                      change({ serial: { ...p.serial, rts: e.target.checked } })
+                    }
+                  />
+                  Assert RTS (without RTS/CTS)
+                </label>
+              </div>
+              <p className="warning">
+                Connecting can change control lines or reset a device. No
+                automatic commands or local echo are sent. Enter sends CR.
+              </p>
+            </>
+          )}
+          {p.protocol !== "Serial" &&
+            p.protocol !== "Telnet" &&
+            p.protocol !== "Local" && (
+              <label>
+                Username
+                <input
+                  value={p.username}
+                  maxLength={256}
+                  onChange={(e) => change({ username: e.target.value })}
+                />
+              </label>
+            )}
+          {p.protocol === "Vnc" && (
+            <VncSettings profile={p} onChange={change} />
+          )}
+          {p.protocol === "Rdp" && (
+            <fieldset className="session-statistics-settings">
+              <legend>Remote desktop</legend>
+              <label className="check-label">
+                <input
+                  type="checkbox"
+                  aria-label="Share clipboard"
+                  checked={p.rdp?.clipboard ?? true}
+                  onChange={(e) =>
+                    change({
+                      rdp: { ...rdpSettings(p), clipboard: e.target.checked },
+                    })
+                  }
+                />
+                Share the clipboard with the remote computer
+              </label>
+              <small>
+                Saving a change reconnects a running session; open programs on
+                the remote computer stay open.
+              </small>
+              <label>
+                Remote audio
+                <select
+                  value={p.rdp?.audio ?? "Off"}
+                  onChange={(e) =>
+                    change({
+                      rdp: {
+                        ...rdpSettings(p),
+                        audio: e.target.value as "Local" | "Remote" | "Off",
+                      },
+                    })
+                  }
+                >
+                  <option value="Off">Do not play</option>
+                  <option value="Local">Play on this computer</option>
+                  <option value="Remote">Play on the remote computer</option>
+                </select>
+              </label>
+              <label>
+                Windows key combinations
+                <select
+                  value={p.rdp?.keyboard ?? "Remote"}
+                  onChange={(e) =>
+                    change({
+                      rdp: {
+                        ...rdpSettings(p),
+                        keyboard: e.target.value as "Remote" | "Local",
+                      },
+                    })
+                  }
+                >
+                  <option value="Remote">
+                    On the remote computer while it has focus
+                  </option>
+                  <option value="Local">On this computer</option>
+                </select>
+              </label>
+              <RdpCertificate
+                profileId={p.id}
+                viaGateway={!!p.gateways?.length}
               />
-            </label>
+              <p className="hint">
+                Drives, printers, smart cards and other devices are not shared.
+                A Windows prompt asks for the password; "Remember me" keeps it
+                in Windows Credential Manager on this computer. Windows shows
+                its own warning when it cannot verify the server.
+              </p>
+            </fieldset>
+          )}
+          {p.protocol === "Ssh" && (
+            <>
+              <X11Settings
+                enabled={p.ssh.x11_forward ?? false}
+                onChange={(x11_forward) => ssh({ x11_forward })}
+              />
+              <label>
+                Authentication
+                <select
+                  value={p.ssh.auth}
+                  onChange={(e) =>
+                    ssh({ auth: e.target.value as Profile["ssh"]["auth"] })
+                  }
+                >
+                  <option value="WindowsAgent">Windows SSH agent</option>
+                  <option value="KeyFile">Private-key file</option>
+                  <option value="Password">Password</option>
+                </select>
+              </label>
+              {p.ssh.auth === "WindowsAgent" ? (
+                <>
+                  <label>
+                    Identity fingerprint{" "}
+                    <span className="optional">optional</span>
+                    <input
+                      value={p.ssh.identity_fingerprint}
+                      onChange={(e) =>
+                        ssh({ identity_fingerprint: e.target.value })
+                      }
+                      placeholder="SHA256:…"
+                    />
+                  </label>
+                  <details className="advanced">
+                    <summary>Agent and OpenSSH identity rules</summary>
+                    <label>
+                      OpenSSH identity host{" "}
+                      <span className="optional">optional</span>
+                      <input
+                        value={p.ssh.config_host}
+                        maxLength={253}
+                        onChange={(e) => ssh({ config_host: e.target.value })}
+                        placeholder="Uses Host / IP or a unique matching HostName entry"
+                      />
+                    </label>
+                    <small>
+                      Reads IdentityFile / IdentitiesOnly from your user SSH
+                      config. Endpoint fields remain as entered. An explicit
+                      fingerprint overrides identity-config lookup.
+                    </small>
+                    <label>
+                      SSH identity config file{" "}
+                      <span className="optional">optional</span>
+                      <input
+                        value={p.ssh.config_file}
+                        onChange={(e) => ssh({ config_file: e.target.value })}
+                        placeholder="Default: your user .ssh/config"
+                      />
+                    </label>
+                    <label>
+                      Local named pipe
+                      <input
+                        value={p.ssh.agent_pipe}
+                        onChange={(e) => ssh({ agent_pipe: e.target.value })}
+                      />
+                    </label>
+                  </details>
+                </>
+              ) : p.ssh.auth === "Password" ? (
+                <small>
+                  A Windows prompt asks for the password when connecting;
+                  "Remember me" keeps it in the Windows Credential Manager for
+                  this saved connection on this computer, never in the bookmark
+                  file.
+                </small>
+              ) : (
+                <label>
+                  Private-key path
+                  <input
+                    value={p.ssh.key_file}
+                    onChange={(e) => ssh({ key_file: e.target.value })}
+                  />
+                  <small>
+                    For encrypted keys, load the key into the Windows agent.
+                  </small>
+                </label>
+              )}
+            </>
           )}
         </div>
-        {p.protocol === "Local" && (
+        {["Ssh", "Telnet", "Rdp", "Vnc"].includes(p.protocol) &&
+          tab === "connection" && (
+            <GatewayEditor
+              profile={p}
+              profiles={profiles}
+              onChange={(gateways) => change({ gateways })}
+            />
+          )}
+        {p.protocol === "Ssh" && (
+          <div
+            role="tabpanel"
+            id="session-panel-statistics"
+            aria-labelledby="session-tab-statistics"
+            hidden={tab !== "statistics"}
+          >
+            <fieldset className="session-statistics-settings">
+              <legend>Host statistics</legend>
+              <label className="check-label">
+                <input
+                  type="checkbox"
+                  aria-label="Show session host statistics"
+                  checked={p.statistics_enabled ?? statisticsEnabled}
+                  onChange={(e) =>
+                    change({ statistics_enabled: e.target.checked })
+                  }
+                />
+                Show host statistics
+              </label>
+              <div className="setting-inheritance">
+                <small>
+                  {p.statistics_enabled === null
+                    ? `Using global setting (${statisticsEnabled ? "on" : "off"})`
+                    : "Session override"}
+                </small>
+                <button
+                  disabled={p.statistics_enabled === null}
+                  onClick={() => change({ statistics_enabled: null })}
+                >
+                  Use global setting
+                </button>
+              </div>
+            </fieldset>
+          </div>
+        )}
+        <div
+          role="tabpanel"
+          id="session-panel-terminal"
+          aria-labelledby="session-tab-terminal"
+          hidden={tab !== "terminal"}
+        >
           <label>
-            Start directory
+            Font size override
             <input
-              value={p.local?.directory ?? ""}
-              maxLength={1024}
-              placeholder="Empty: your user folder, for example C:\Work"
+              aria-label="Session font size"
+              type="number"
+              min={8}
+              max={32}
+              step="any"
+              placeholder={`Global (${globalFontSize} px)`}
+              value={p.font_size ?? ""}
               onChange={(e) =>
                 change({
-                  local: {
-                    shell: p.local?.shell ?? "PowerShell",
-                    directory: e.target.value,
-                  },
+                  font_size:
+                    e.target.value === "" ? null : Number(e.target.value),
                 })
               }
             />
+            <small>8–32 px. Leave empty to use the global setting.</small>
           </label>
-        )}
-        {p.protocol === "Serial" && (
-          <>
-            <datalist id="serial-ports">
-              {ports.map((port) => (
-                <option key={port} value={port} />
-              ))}
-            </datalist>
-            <button type="button" onClick={refreshPorts}>
-              Refresh COM ports
-            </button>
-            <small role="status">
-              {portStatus ||
-                "Enter a COM device or refresh the list. Ports are not opened during discovery."}
-            </small>
-            <div className="form-row">
-              <label>
-                Baud rate
-                <input
-                  type="number"
-                  min={50}
-                  max={4000000}
-                  value={p.serial.baud_rate}
-                  onChange={(e) =>
-                    change({
-                      serial: {
-                        ...p.serial,
-                        baud_rate: Number(e.target.value),
-                      },
-                    })
-                  }
-                />
-              </label>
-              <label>
-                Data bits
-                <select
-                  value={p.serial.data_bits}
-                  onChange={(e) =>
-                    change({
-                      serial: {
-                        ...p.serial,
-                        data_bits: Number(e.target.value),
-                      },
-                    })
-                  }
-                >
-                  {[5, 6, 7, 8].map((v) => (
-                    <option key={v}>{v}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Parity
-                <select
-                  value={p.serial.parity}
-                  onChange={(e) =>
-                    change({
-                      serial: {
-                        ...p.serial,
-                        parity: e.target.value as Profile["serial"]["parity"],
-                      },
-                    })
-                  }
-                >
-                  {["None", "Odd", "Even"].map((v) => (
-                    <option key={v}>{v}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Stop bits
-                <select
-                  value={p.serial.stop_bits}
-                  onChange={(e) =>
-                    change({
-                      serial: {
-                        ...p.serial,
-                        stop_bits: Number(e.target.value),
-                      },
-                    })
-                  }
-                >
-                  {[1, 2].map((v) => (
-                    <option key={v}>{v}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <label>
-              Flow control
-              <select
-                value={p.serial.flow_control}
-                onChange={(e) =>
-                  change({
-                    serial: {
-                      ...p.serial,
-                      flow_control: e.target
-                        .value as Profile["serial"]["flow_control"],
-                    },
-                  })
-                }
-              >
-                <option value="None">None</option>
-                <option value="Software">XON/XOFF</option>
-                <option value="Hardware">RTS/CTS</option>
-              </select>
-            </label>
-            <div className="form-row serial-lines">
-              <label>
+          {["Ssh", "Telnet", "Serial", "Local"].includes(p.protocol) && (
+            <fieldset className="session-statistics-settings">
+              <legend>Terminal output logging</legend>
+              <label className="check-label">
                 <input
                   type="checkbox"
-                  checked={p.serial.dtr}
+                  aria-label="Log terminal output"
+                  checked={p.logging.enabled}
                   onChange={(e) =>
-                    change({ serial: { ...p.serial, dtr: e.target.checked } })
+                    change({
+                      logging: { ...p.logging, enabled: e.target.checked },
+                    })
                   }
                 />
-                Assert DTR on connect
+                Log terminal output automatically
               </label>
-              <label>
+              <label className="log-file-setting">
+                Log file (optional)
                 <input
-                  type="checkbox"
-                  disabled={p.serial.flow_control === "Hardware"}
-                  checked={p.serial.rts}
+                  aria-label="Log file path"
+                  disabled={!p.logging.enabled}
+                  value={p.logging.file}
+                  maxLength={1024}
+                  placeholder={`Documents\\YuuTerm\\${p.name || "Session"}\\${p.logging.rotation ? "current.log" : "<timestamp>.log"}`}
                   onChange={(e) =>
-                    change({ serial: { ...p.serial, rts: e.target.checked } })
+                    change({ logging: { ...p.logging, file: e.target.value } })
                   }
                 />
-                Assert RTS (without RTS/CTS)
               </label>
-            </div>
-            <p className="warning">
-              Connecting can change control lines or reset a device. No
-              automatic commands or local echo are sent. Enter sends CR.
-            </p>
-          </>
-        )}
-        {p.protocol !== "Serial" &&
-          p.protocol !== "Telnet" &&
-          p.protocol !== "Local" && (
-            <label>
-              Username
-              <input
-                value={p.username}
-                maxLength={256}
-                onChange={(e) => change({ username: e.target.value })}
+              <p className="hint">
+                Leave empty for{" "}
+                {p.logging.rotation
+                  ? "current.log reused across reconnects"
+                  : "a new timestamped file"}{" "}
+                in Documents\YuuTerm\
+                {p.name || "Session"}. A custom file is appended to. Plaintext
+                output; stops at 64 MiB unless rotation is enabled. Applies on
+                the next connection and reconnects.
+              </p>
+              <LogRotationSettings
+                value={p.logging}
+                onChange={(logging) => change({ logging })}
               />
+            </fieldset>
+          )}
+          {p.protocol === "Telnet" && (
+            <label className="check-label">
+              <input
+                type="checkbox"
+                aria-label="TELNET local line editing"
+                checked={p.telnet.local_line_editing}
+                onChange={(e) =>
+                  change({ telnet: { local_line_editing: e.target.checked } })
+                }
+              />
+              Local line editing (next connection; Enter sends, maximum 4096
+              UTF-8 bytes)
             </label>
           )}
-        {p.protocol === "Vnc" && <VncSettings profile={p} onChange={change} />}
-        {p.protocol === "Rdp" && (
-          <fieldset className="session-statistics-settings">
-            <legend>Remote desktop</legend>
-            <label className="check-label">
-              <input
-                type="checkbox"
-                aria-label="Share clipboard"
-                checked={p.rdp?.clipboard ?? true}
-                onChange={(e) =>
-                  change({
-                    rdp: { ...rdpSettings(p), clipboard: e.target.checked },
-                  })
-                }
-              />
-              Share the clipboard with the remote computer
-            </label>
-            <small>
-              Saving a change reconnects a running session; open programs on the
-              remote computer stay open.
-            </small>
-            <label>
-              Remote audio
-              <select
-                value={p.rdp?.audio ?? "Off"}
-                onChange={(e) =>
-                  change({
-                    rdp: {
-                      ...rdpSettings(p),
-                      audio: e.target.value as "Local" | "Remote" | "Off",
-                    },
-                  })
-                }
-              >
-                <option value="Off">Do not play</option>
-                <option value="Local">Play on this computer</option>
-                <option value="Remote">Play on the remote computer</option>
-              </select>
-            </label>
-            <label>
-              Windows key combinations
-              <select
-                value={p.rdp?.keyboard ?? "Remote"}
-                onChange={(e) =>
-                  change({
-                    rdp: {
-                      ...rdpSettings(p),
-                      keyboard: e.target.value as "Remote" | "Local",
-                    },
-                  })
-                }
-              >
-                <option value="Remote">
-                  On the remote computer while it has focus
-                </option>
-                <option value="Local">On this computer</option>
-              </select>
-            </label>
-            <RdpCertificate profileId={p.id} />
-            <p className="hint">
-              Drives, printers, smart cards and other devices are not shared. A
-              Windows prompt asks for the password; "Remember me" keeps it in
-              Windows Credential Manager on this computer. Windows shows its own
-              warning when it cannot verify the server.
-            </p>
-          </fieldset>
-        )}
-        {p.protocol === "Ssh" && (
-          <>
-            <X11Settings
-              enabled={p.ssh.x11_forward ?? false}
-              onChange={(x11_forward) => ssh({ x11_forward })}
-            />
-            <label>
-              Authentication
-              <select
-                value={p.ssh.auth}
-                onChange={(e) =>
-                  ssh({ auth: e.target.value as Profile["ssh"]["auth"] })
-                }
-              >
-                <option value="WindowsAgent">Windows SSH agent</option>
-                <option value="KeyFile">Private-key file</option>
-                <option value="Password">Password</option>
-              </select>
-            </label>
-            {p.ssh.auth === "WindowsAgent" ? (
-              <>
-                <label>
-                  Identity fingerprint{" "}
-                  <span className="optional">optional</span>
-                  <input
-                    value={p.ssh.identity_fingerprint}
-                    onChange={(e) =>
-                      ssh({ identity_fingerprint: e.target.value })
-                    }
-                    placeholder="SHA256:…"
-                  />
-                </label>
-                <details className="advanced">
-                  <summary>Agent and OpenSSH identity rules</summary>
-                  <label>
-                    OpenSSH identity host{" "}
-                    <span className="optional">optional</span>
-                    <input
-                      value={p.ssh.config_host}
-                      maxLength={253}
-                      onChange={(e) => ssh({ config_host: e.target.value })}
-                      placeholder="Uses Host / IP or a unique matching HostName entry"
-                    />
-                  </label>
-                  <small>
-                    Reads IdentityFile / IdentitiesOnly from your user SSH
-                    config. Endpoint fields remain as entered. An explicit
-                    fingerprint overrides identity-config lookup.
-                  </small>
-                  <label>
-                    SSH identity config file{" "}
-                    <span className="optional">optional</span>
-                    <input
-                      value={p.ssh.config_file}
-                      onChange={(e) => ssh({ config_file: e.target.value })}
-                      placeholder="Default: your user .ssh/config"
-                    />
-                  </label>
-                  <label>
-                    Local named pipe
-                    <input
-                      value={p.ssh.agent_pipe}
-                      onChange={(e) => ssh({ agent_pipe: e.target.value })}
-                    />
-                  </label>
-                </details>
-              </>
-            ) : p.ssh.auth === "Password" ? (
-              <small>
-                A Windows prompt asks for the password when connecting;
-                "Remember me" keeps it in the Windows Credential Manager for
-                this saved connection on this computer, never in the bookmark
-                file.
-              </small>
-            ) : (
-              <label>
-                Private-key path
-                <input
-                  value={p.ssh.key_file}
-                  onChange={(e) => ssh({ key_file: e.target.value })}
-                />
-                <small>
-                  For encrypted keys, load the key into the Windows agent.
-                </small>
-              </label>
-            )}
-          </>
-        )}
-      </div>
-      {p.protocol === "Ssh" && (
-        <div
-          role="tabpanel"
-          id="session-panel-statistics"
-          aria-labelledby="session-tab-statistics"
-          hidden={tab !== "statistics"}
-        >
-          <fieldset className="session-statistics-settings">
-            <legend>Host statistics</legend>
-            <label className="check-label">
-              <input
-                type="checkbox"
-                aria-label="Show session host statistics"
-                checked={p.statistics_enabled ?? statisticsEnabled}
-                onChange={(e) =>
-                  change({ statistics_enabled: e.target.checked })
-                }
-              />
-              Show host statistics
-            </label>
-            <div className="setting-inheritance">
-              <small>
-                {p.statistics_enabled === null
-                  ? `Using global setting (${statisticsEnabled ? "on" : "off"})`
-                  : "Session override"}
-              </small>
-              <button
-                disabled={p.statistics_enabled === null}
-                onClick={() => change({ statistics_enabled: null })}
-              >
-                Use global setting
-              </button>
-            </div>
-          </fieldset>
         </div>
-      )}
-      <div
-        role="tabpanel"
-        id="session-panel-terminal"
-        aria-labelledby="session-tab-terminal"
-        hidden={tab !== "terminal"}
-      >
-        <label>
-          Font size override
-          <input
-            aria-label="Session font size"
-            type="number"
-            min={8}
-            max={32}
-            step="any"
-            placeholder={`Global (${globalFontSize} px)`}
-            value={p.font_size ?? ""}
-            onChange={(e) =>
-              change({
-                font_size:
-                  e.target.value === "" ? null : Number(e.target.value),
-              })
-            }
-          />
-          <small>8–32 px. Leave empty to use the global setting.</small>
-        </label>
-        {["Ssh", "Telnet", "Serial", "Local"].includes(p.protocol) && (
-          <fieldset className="session-statistics-settings">
-            <legend>Terminal output logging</legend>
-            <label className="check-label">
-              <input
-                type="checkbox"
-                aria-label="Log terminal output"
-                checked={p.logging.enabled}
-                onChange={(e) =>
-                  change({
-                    logging: { ...p.logging, enabled: e.target.checked },
-                  })
-                }
-              />
-              Log terminal output automatically
-            </label>
-            <label className="log-file-setting">
-              Log file (optional)
-              <input
-                aria-label="Log file path"
-                disabled={!p.logging.enabled}
-                value={p.logging.file}
-                maxLength={1024}
-                placeholder={`Documents\\YuuTerm\\${p.name || "Session"}\\${p.logging.rotation ? "current.log" : "<timestamp>.log"}`}
-                onChange={(e) =>
-                  change({ logging: { ...p.logging, file: e.target.value } })
-                }
-              />
-            </label>
-            <p className="hint">
-              Leave empty for{" "}
-              {p.logging.rotation
-                ? "current.log reused across reconnects"
-                : "a new timestamped file"}{" "}
-              in Documents\YuuTerm\
-              {p.name || "Session"}. A custom file is appended to. Plaintext
-              output; stops at 64 MiB unless rotation is enabled. Applies on the
-              next connection and reconnects.
-            </p>
-            <LogRotationSettings
-              value={p.logging}
-              onChange={(logging) => change({ logging })}
-            />
-          </fieldset>
-        )}
-        {p.protocol === "Telnet" && (
-          <label className="check-label">
-            <input
-              type="checkbox"
-              aria-label="TELNET local line editing"
-              checked={p.telnet.local_line_editing}
-              onChange={(e) =>
-                change({ telnet: { local_line_editing: e.target.checked } })
-              }
-            />
-            Local line editing (next connection; Enter sends, maximum 4096 UTF-8
-            bytes)
-          </label>
-        )}
       </div>
       {p.protocol === "Telnet" && (
         <p className="warning">TELNET transmits data without encryption.</p>

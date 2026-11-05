@@ -20,6 +20,7 @@ use yuuterm_core::{Profile, SshAuth};
 pub(crate) struct Handler {
     pub x11: Option<Arc<crate::x11::Forward>>,
     pub host: String,
+    pub role: String,
     pub store: Arc<Mutex<Result<TrustStore, String>>>,
     pub state: watch::Sender<Snapshot>,
     pub reply: Arc<Mutex<Option<oneshot::Sender<bool>>>>,
@@ -88,6 +89,7 @@ impl client::Handler for Handler {
             s.status = "Verify the SSH host key".into();
             s.trust = Some(TrustPrompt {
                 host: self.host.clone(),
+                role: self.role.clone(),
                 algorithm: key.algorithm().to_string(),
                 fingerprint: key.fingerprint(HashAlg::Sha256).to_string(),
             });
@@ -120,6 +122,97 @@ impl std::fmt::Display for PasswordRejected {
     }
 }
 impl std::error::Error for PasswordRejected {}
+
+/// Any failure at a gateway, prefixed "Gateway N (host:port)".
+#[derive(Debug)]
+pub(crate) struct GatewayError {
+    pub index: usize,
+    label: String,
+    source: anyhow::Error,
+}
+impl GatewayError {
+    pub fn password_rejected(&self) -> bool {
+        self.source.is::<PasswordRejected>()
+    }
+}
+impl std::fmt::Display for GatewayError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {:#}", self.label, self.source)
+    }
+}
+impl std::error::Error for GatewayError {}
+
+fn gateway_error(index: usize, label: &str, source: anyhow::Error) -> anyhow::Error {
+    GatewayError {
+        index,
+        label: label.into(),
+        source,
+    }
+    .into()
+}
+
+impl Handler {
+    fn for_hop(&self, host: &str, port: u16, role: String) -> Self {
+        Self {
+            x11: None,
+            host: format!("[{}]:{}", host.to_ascii_lowercase(), port),
+            role,
+            store: self.store.clone(),
+            state: self.state.clone(),
+            reply: self.reply.clone(),
+            wake: self.wake.clone(),
+            cancel: self.cancel.clone(),
+        }
+    }
+}
+
+/// The authentication view of a gateway hop; no OpenSSH config rules apply.
+fn hop_profile(hop: &yuuterm_core::ManualGateway) -> Profile {
+    let mut p = Profile {
+        host: hop.host.clone(),
+        port: hop.port,
+        username: hop.username.clone(),
+        ..Default::default()
+    };
+    p.ssh.auth = hop.auth;
+    p.ssh.key_file = hop.key_file.clone();
+    p.ssh.agent_pipe = hop.agent_pipe.clone();
+    p.ssh.identity_fingerprint = hop.identity_fingerprint.clone();
+    p
+}
+
+async fn handshake<S>(
+    config: &Arc<client::Config>,
+    stream: S,
+    handler: Handler,
+) -> Result<client::Handle<Handler>>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
+    tokio::time::timeout(
+        Duration::from_secs(315),
+        client::connect_stream(config.clone(), stream, handler),
+    )
+    .await
+    .context("SSH handshake timed out")?
+}
+
+/// A `direct-tcpip` channel from `gateway` to the next hop; the gateway
+/// resolves the name, so internal names work.
+async fn tunnel(
+    gateway: &client::Handle<Handler>,
+    host: &str,
+    port: u16,
+) -> Result<russh::ChannelStream<client::Msg>> {
+    let channel = tokio::time::timeout(
+        Duration::from_secs(15),
+        gateway.channel_open_direct_tcpip(host, u32::from(port), "127.0.0.1", 0),
+    )
+    .await
+    .with_context(|| format!("timed out opening a tunnel to {host}:{port}"))?
+    .map_err(|e| anyhow::anyhow!("refused a tunnel to {host}:{port} ({e})"))?;
+    Ok(channel.into_stream())
+}
 
 async fn password_authenticate(
     session: &mut client::Handle<Handler>,
@@ -316,7 +409,7 @@ async fn connect_tcp(host: &str, port: u16) -> Result<tokio::net::TcpStream> {
 }
 
 pub(crate) async fn run(
-    (profile, password): (Profile, Option<zeroize::Zeroizing<String>>),
+    (profile, password, hops): (Profile, Option<zeroize::Zeroizing<String>>, Vec<crate::Hop>),
     handler: Handler,
     mut commands: mpsc::Receiver<Command>,
     state: &watch::Sender<Snapshot>,
@@ -330,23 +423,33 @@ pub(crate) async fn run(
     let x11 = handler.x11.clone();
     #[cfg(feature = "startup-probe")]
     let mut probe = crate::startup::Probe::new(state);
-    let stream = connect_tcp(&profile.host, profile.port).await?;
+    let config = config();
+    let gateways = connect_gateways(hops, &handler, state, &wake).await?;
+    let total = gateways.len();
+    let stream = match gateways.last() {
+        None => None,
+        Some((last, label)) => Some(
+            tunnel(last, &profile.host, profile.port)
+                .await
+                .map_err(|source| gateway_error(total - 1, label, source))?,
+        ),
+    };
     #[cfg(feature = "startup-probe")]
     probe.mark("tcp_ms");
-    let config = client::Config {
-        maximum_packet_size: 32768,
-        window_size: 1024 * 1024,
-        channel_buffer_size: 16,
-        keepalive_interval: Some(Duration::from_secs(30)),
-        keepalive_max: 3,
-        ..Default::default()
+    let mut connection = match stream {
+        None => {
+            handshake(
+                &config,
+                connect_tcp(&profile.host, profile.port).await?,
+                handler,
+            )
+            .await?
+        }
+        Some(stream) => {
+            state.send_modify(|s| s.status = "Connecting…".into());
+            handshake(&config, stream, handler).await?
+        }
     };
-    let mut connection = tokio::time::timeout(
-        Duration::from_secs(315),
-        client::connect_stream(Arc::new(config), stream, handler),
-    )
-    .await
-    .context("SSH handshake timed out")??;
     #[cfg(feature = "startup-probe")]
     probe.mark("handshake_ms");
     tokio::time::timeout(
@@ -887,6 +990,123 @@ async fn read_directory(
     .await;
     let _ = sftp.close(handle).await;
     result
+}
+
+fn config() -> Arc<client::Config> {
+    Arc::new(client::Config {
+        maximum_packet_size: 32768,
+        window_size: 1024 * 1024,
+        channel_buffer_size: 16,
+        keepalive_interval: Some(Duration::from_secs(30)),
+        keepalive_max: 3,
+        ..Default::default()
+    })
+}
+
+async fn connect_gateways(
+    hops: Vec<crate::Hop>,
+    handler: &Handler,
+    state: &watch::Sender<Snapshot>,
+    wake: &Wake,
+) -> Result<Vec<(client::Handle<Handler>, String)>> {
+    let config = config();
+    // Gateways stay connected for the session; dropped after the target. A
+    // refused or failed tunnel belongs to the gateway that was asked to open it.
+    let mut gateways: Vec<(client::Handle<Handler>, String)> = Vec::with_capacity(hops.len());
+    let total = hops.len();
+    for (index, hop) in hops.into_iter().enumerate() {
+        let crate::Hop {
+            gateway: hop,
+            password,
+        } = hop;
+        let label = format!("Gateway {} ({}:{})", index + 1, hop.host, hop.port);
+        state
+            .send_modify(|s| s.status = format!("Connecting to gateway {} of {total}…", index + 1));
+        wake();
+        let tunneled = match gateways.last() {
+            None => None,
+            Some((previous, previous_label)) => Some(
+                tunnel(previous, &hop.host, hop.port)
+                    .await
+                    .map_err(|source| gateway_error(index - 1, previous_label, source))?,
+            ),
+        };
+        let connected = async {
+            let next = handler.for_hop(
+                &hop.host,
+                hop.port,
+                format!("Gateway {} of {total}", index + 1),
+            );
+            let mut connection = match tunneled {
+                None => handshake(&config, connect_tcp(&hop.host, hop.port).await?, next).await?,
+                Some(stream) => handshake(&config, stream, next).await?,
+            };
+            state.send_modify(|s| s.status = format!("Authenticating at gateway {}…", index + 1));
+            wake();
+            tokio::time::timeout(
+                Duration::from_secs(30),
+                authenticate(&mut connection, &hop_profile(&hop), state, password),
+            )
+            .await
+            .context("SSH authentication timed out")??;
+            Ok::<_, anyhow::Error>(connection)
+        }
+        .await
+        .map_err(|source| gateway_error(index, &label, source))?;
+        gateways.push((connected, label));
+    }
+    Ok(gateways)
+}
+
+/// Loopback transport owned by one connection incarnation. Channels and their
+/// copy buffers are bounded; dropping this future aborts every bridge.
+pub(crate) async fn forward(
+    profile: Profile,
+    hops: Vec<crate::Hop>,
+    handler: Handler,
+    listener: tokio::net::TcpListener,
+    state: &watch::Sender<Snapshot>,
+    wake: Wake,
+    mut ready: Option<oneshot::Sender<()>>,
+) -> Result<()> {
+    let gateways = connect_gateways(hops, &handler, state, &wake).await?;
+    let (last, label) = gateways
+        .last()
+        .context("A forward requires an SSH gateway")?;
+    if ready.is_none() {
+        state.send_modify(|s| {
+            s.connected = true;
+            s.status = "SSH gateway ready".into();
+        });
+        wake();
+    }
+    let mut bridges = tokio::task::JoinSet::new();
+    let mut health = tokio::time::interval(Duration::from_secs(1));
+    loop {
+        tokio::select! {
+            _ = health.tick() => {
+                anyhow::ensure!(!last.is_closed(), "SSH gateway connection closed");
+            }
+            result = bridges.join_next(), if !bridges.is_empty() => {
+                result.context("Gateway bridge disappeared")?.context("Gateway bridge failed")??;
+            }
+            accepted = listener.accept() => {
+                let (mut local, peer) = accepted?;
+                if !peer.ip().is_loopback() || bridges.len() >= 4 { continue; }
+                local.set_nodelay(true)?;
+                let mut remote = tunnel(last, &profile.host, profile.port).await
+                    .map_err(|e| gateway_error(gateways.len()-1, label, e))?;
+                if let Some(ready) = ready.take() { let _ = ready.send(()); }
+                bridges.spawn(async move {
+                    // EOF, including an abandoned certificate probe, ends only
+                    // this channel. Listener and authenticated chain stay alive.
+                    let _ = tokio::io::copy_bidirectional_with_sizes(
+                        &mut local, &mut remote, 32768, 32768).await;
+                    Ok::<(), anyhow::Error>(())
+                });
+            }
+        }
+    }
 }
 
 #[cfg(test)]

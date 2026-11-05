@@ -46,11 +46,39 @@ pub(super) fn external_profile(profile: &Profile) -> bool {
         && std::env::var(user).ok().as_deref() == Some(&profile.username)
         && profile.protocol == yuuterm_core::Protocol::Ssh
         && profile.ssh.auth == yuuterm_core::SshAuth::KeyFile
-        && profile.port == 22
+        && port_admitted(
+            profile,
+            std::env::var("YUUTERM_LINUX_OPENSSH_PORT").ok().as_deref(),
+        )
+        && gateways_admitted(
+            profile,
+            std::env::var("YUUTERM_LINUX_GATEWAY_HOST").ok().as_deref(),
+            std::env::var("YUUTERM_LINUX_GATEWAY_USER").ok().as_deref(),
+        )
         && profile.id == 1
         && !profile.logging.enabled
         && !profile.ssh.x11_forward
         && profile.credential_id.is_empty()
+}
+
+/// Port 22, or exactly the runner's explicit gateway-only target port.
+fn port_admitted(profile: &Profile, port: Option<&str>) -> bool {
+    profile.port == port.map_or(Some(22), |p| p.parse().ok()).unwrap_or(0)
+}
+
+/// Direct, or exactly one credential-free key-file hop named by the runner.
+fn gateways_admitted(profile: &Profile, host: Option<&str>, user: Option<&str>) -> bool {
+    match (&profile.gateways[..], host, user) {
+        ([], None, None) => true,
+        ([yuuterm_core::Gateway::Manual(hop)], Some(host), Some(user)) => {
+            hop.host == host
+                && hop.username == user
+                && hop.port == 22
+                && hop.auth == yuuterm_core::SshAuth::KeyFile
+                && hop.credential_id.is_empty()
+        }
+        _ => false,
+    }
 }
 
 fn telnet_profile(profile: &Profile, host: Option<&str>, user: Option<&str>) -> bool {
@@ -100,6 +128,45 @@ pub(super) fn capture_external_path(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn external_gateway_must_match_the_environment_exactly() {
+        let hop = |host: &str, user: &str| {
+            yuuterm_core::Gateway::Manual(yuuterm_core::ManualGateway {
+                host: host.into(),
+                username: user.into(),
+                auth: yuuterm_core::SshAuth::KeyFile,
+                key_file: "C:/k".into(),
+                ..Default::default()
+            })
+        };
+        let mut p = Profile::default();
+        assert!(gateways_admitted(&p, None, None), "direct stays admitted");
+        assert!(
+            !gateways_admitted(&p, Some("gw"), Some("u")),
+            "expected gateway missing"
+        );
+        p.gateways = vec![hop("gw", "u")];
+        assert!(gateways_admitted(&p, Some("gw"), Some("u")));
+        assert!(!gateways_admitted(&p, None, None));
+        assert!(!gateways_admitted(&p, Some("gw"), Some("other")));
+        p.gateways = vec![hop("gw", "u"), hop("gw", "u")];
+        assert!(
+            !gateways_admitted(&p, Some("gw"), Some("u")),
+            "exactly one hop"
+        );
+        p.gateways = vec![yuuterm_core::Gateway::Saved { profile_id: 2 }];
+        assert!(!gateways_admitted(&p, Some("gw"), Some("u")));
+        let mut port = Profile {
+            port: 22,
+            ..Default::default()
+        };
+        assert!(port_admitted(&port, None));
+        assert!(!port_admitted(&port, Some("2222")));
+        port.port = 2222;
+        assert!(port_admitted(&port, Some("2222")));
+        assert!(!port_admitted(&port, None));
+    }
 
     #[test]
     fn external_telnet_requires_exact_nonempty_environment_endpoint_and_account() {

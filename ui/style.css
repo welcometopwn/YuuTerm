@@ -856,6 +856,55 @@ small,
   color: var(--muted);
   margin-right: auto;
 }
+/* SSH gateways */
+.endpoint:has(+ .endpoint-via) {
+  margin-right: 0;
+}
+.endpoint-via {
+  color: var(--muted);
+  font-size: 0.85em;
+  white-space: nowrap;
+  margin: 0 auto 0 6px;
+}
+.gateway-marker {
+  margin-left: 5px;
+  vertical-align: -1px;
+  color: var(--muted);
+}
+.gateway-row {
+  display: grid;
+  gap: 0;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.gateway-row.invalid select {
+  outline: 1px solid var(--danger, #f38ba8);
+}
+.gateway-row > .form-row {
+  align-items: flex-end;
+}
+.gateway-row label {
+  margin: 6px 0;
+}
+.gateway-actions {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.gateway-actions button {
+  height: 34px;
+  min-width: 34px;
+}
+.gateway-path {
+  font-family: Consolas, monospace;
+  font-size: 0.85em;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.trust-role {
+  margin: 0;
+  font-weight: 600;
+}
 .connect {
   padding: 3px 7px;
   font-size: 11px;
