@@ -297,7 +297,7 @@ export function TerminalPane(props: Props) {
     const resize = () => {
       if (element.clientWidth < 50 || element.clientHeight < 40) return;
       fit.fit();
-      const cols = Math.min(240, Math.max(10, term.cols)),
+      const cols = Math.min(400, Math.max(10, term.cols)),
         rows = Math.min(100, Math.max(2, term.rows));
       if (term.cols !== cols || term.rows !== rows) term.resize(cols, rows);
       const next = `${cols}:${rows}`;

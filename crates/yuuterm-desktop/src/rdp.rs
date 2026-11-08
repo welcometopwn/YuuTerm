@@ -565,9 +565,21 @@ fn send_keys(control: &IDispatch, keys: &[i32], up: &[bool]) -> std::result::Res
     unsafe {
         let vtable = *(this as *const *const usize);
         let send: SendKeys = std::mem::transmute(*vtable.add(14));
-        send(this, keys.len() as i32, up.as_ptr(), keys.as_ptr())
-            .ok()
-            .map_err(|e| e.to_string())
+        // The control answers E_FAIL while it is busy (the first call after a
+        // pause nearly always, more under pointer movement); the same call a
+        // few milliseconds later is accepted. Without the retry the Windows
+        // key reached the local Start menu instead (#35, 6 November 2026).
+        let mut attempt = 0;
+        loop {
+            match send(this, keys.len() as i32, up.as_ptr(), keys.as_ptr()).ok() {
+                Ok(()) => return Ok(()),
+                Err(e) if attempt >= 20 => return Err(e.to_string()),
+                Err(_) => {
+                    attempt += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(3));
+                }
+            }
+        }
     }
 }
 

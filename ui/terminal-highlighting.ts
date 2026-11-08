@@ -49,7 +49,7 @@ export function terminalHighlighting(
         line = buffer.getLine(index);
       if (!line) continue;
       const cells: HighlightCell[] = [];
-      for (let x = 0; x < Math.min(term.cols, 240); x++) {
+      for (let x = 0; x < Math.min(term.cols, 400); x++) {
         const cell = line.getCell(x);
         cells.push({
           chars: cell?.getChars() ?? "",
@@ -66,7 +66,7 @@ export function terminalHighlighting(
       rows.push({ line: index, spans: [] });
     }
     const spans =
-      term.cols > 240
+      term.cols > 400
         ? []
         : highlightViewport(
             visible,
