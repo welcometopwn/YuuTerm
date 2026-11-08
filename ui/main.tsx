@@ -94,6 +94,8 @@ import {
   groupSessions,
   groupNames,
   loadCollapsed,
+  loadGroupOrder,
+  saveGroupOrder,
   saveCollapsed,
 } from "./session-groups";
 import { EditMonitor } from "./EditMonitor";
@@ -278,6 +280,16 @@ function App() {
     destination: { group: string; before: number | null } | null;
   } | null>(null);
   const suppressSessionClick = useRef(false);
+  const [groupOrder, setGroupOrder] = useState(loadGroupOrder);
+  const pointerGroupDrag = useRef<{
+    x: number;
+    y: number;
+    name: string;
+    pointer: number;
+    active: boolean;
+    /** Group to insert before; null = at the end. */
+    destination: { before: string | null } | null;
+  } | null>(null);
   useEffect(() => {
     setSelectedSessions([]);
     selectionAnchor.current = null;
@@ -682,6 +694,14 @@ function App() {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof Element && e.target.closest(".vnc-surface"))
         return;
+      if (e.key === "F5" && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+        // Never reload the webview; F5 only refreshes the file browser, and
+        // stays with the remote program while a terminal has focus.
+        e.preventDefault();
+        if (!(e.target instanceof Element && e.target.closest(".xterm")))
+          window.dispatchEvent(new Event("yuuterm:refresh-files"));
+        return;
+      }
       const n = layoutForKey(e);
       if (!n) return;
       e.preventDefault();
@@ -810,7 +830,10 @@ function App() {
     ...(quickSessions.length
       ? [{ name: QUICK_GROUP, profiles: quickSessions }]
       : []),
-    ...groupSessions(matches.filter((p) => !p.temporary)),
+    ...groupSessions(
+      matches.filter((p) => !p.temporary),
+      groupOrder,
+    ),
   ];
   const visibleSessionIds = sidebarGroups
     .filter((g) => !g.name || !!filter.trim() || !collapsed.has(g.name))
@@ -861,7 +884,6 @@ function App() {
         beforeId,
       });
       setPrefs(updated);
-      setNotice(`${ids.length} session(s) moved`, "success");
       setCollapsed((old) => {
         const next = new Set(old);
         next.delete(group);
@@ -869,7 +891,106 @@ function App() {
         return next;
       });
     });
+  const moveGroupPointer = (
+    event: React.PointerEvent,
+    drag: NonNullable<typeof pointerGroupDrag.current>,
+  ) => {
+    if (
+      !drag.active &&
+      Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 6
+    )
+      return;
+    if (!drag.active) {
+      drag.active = true;
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
+    event.preventDefault();
+    const real = sidebarGroups.filter((g) => g.name !== QUICK_GROUP);
+    const target = document
+      .elementFromPoint(event.clientX, event.clientY)
+      ?.closest<HTMLElement>(
+        ".session-row[data-profile-id], [data-session-group], [data-session-list]",
+      );
+    const isCollapsed = (g: { name: string }) =>
+      !!g.name && !filter.trim() && collapsed.has(g.name);
+    let group: (typeof real)[number] | undefined;
+    let after = false;
+    if (target?.dataset.profileId) {
+      const id = Number(target.dataset.profileId);
+      group = real.find((g) => g.profiles.some((p) => p.id === id));
+    } else if (target?.hasAttribute("data-session-group")) {
+      group = real.find((g) => g.name === target.dataset.sessionGroup);
+    } else if (target?.hasAttribute("data-session-list")) {
+      group = real[real.length - 1];
+      after = true;
+    }
+    if (group && !target?.hasAttribute("data-session-list")) {
+      // Upper half of the whole group (header and rows) = before it, lower = after.
+      const header = document.querySelector<HTMLElement>(
+        `[data-session-group="${CSS.escape(group.name)}"]`,
+      );
+      const lastRow = isCollapsed(group)
+        ? undefined
+        : group.profiles[group.profiles.length - 1];
+      const lastElement = lastRow
+        ? document.querySelector<HTMLElement>(
+            `.session-row[data-profile-id="${lastRow.id}"]`,
+          )
+        : null;
+      const top = (header ?? target)?.getBoundingClientRect().top ?? 0;
+      const bottom = (lastElement ?? header ?? target)?.getBoundingClientRect()
+        .bottom ?? top;
+      after = event.clientY > (top + bottom) / 2;
+    }
+    if (!group) {
+      drag.destination = null;
+      setDropTarget(null);
+      return;
+    }
+    const next = real[real.indexOf(group) + 1];
+    const before = after ? (next?.name ?? null) : group.name;
+    drag.destination = before === drag.name ? null : { before };
+    const lastRow = group.profiles[group.profiles.length - 1];
+    setDropTarget(
+      !drag.destination
+        ? null
+        : !after
+          ? `gbefore:${group.name}`
+          : isCollapsed(group) || !lastRow
+            ? `gafter:${group.name}`
+            : `after:${lastRow.id}`,
+    );
+  };
+  const moveGroup = (name: string, before: string | null) => {
+    const order = groupSessions(
+      prefs.profiles.filter((p) => !p.temporary),
+      groupOrder,
+    )
+      .map((g) => g.name)
+      .filter((n) => n !== name);
+    const at = before === null ? -1 : order.indexOf(before);
+    order.splice(at < 0 ? order.length : at, 0, name);
+    saveGroupOrder(order);
+    setGroupOrder(order);
+  };
+  const groupPointerDown = (event: React.PointerEvent, name: string) => {
+    if (event.button !== 0 || name === QUICK_GROUP) return;
+    pointerGroupDrag.current = {
+      x: event.clientX,
+      y: event.clientY,
+      name,
+      pointer: event.pointerId,
+      active: false,
+      destination: null,
+    };
+  };
   const moveSessionPointer = (event: React.PointerEvent) => {
+    const groupDrag = pointerGroupDrag.current;
+    if (groupDrag) {
+      if (groupDrag.pointer === event.pointerId)
+        moveGroupPointer(event, groupDrag);
+      return;
+    }
     const drag = pointerSessionDrag.current;
     if (!drag || drag.pointer !== event.pointerId || actionWorking.current)
       return;
@@ -888,25 +1009,68 @@ function App() {
     const target = document
       .elementFromPoint(event.clientX, event.clientY)
       ?.closest<HTMLElement>(
-        ".session-row[data-profile-id], [data-session-group]",
+        ".session-row[data-profile-id], [data-session-group], [data-session-list]",
       );
     const profile = target?.dataset.profileId
       ? prefs.profiles.find((p) => p.id === Number(target.dataset.profileId))
       : undefined;
-    drag.destination = profile
-      ? { group: profile.group ?? "", before: profile.id }
-      : target?.hasAttribute("data-session-group")
-        ? { group: target.dataset.sessionGroup ?? "", before: null }
-        : null;
-    setDropTarget(
-      profile
-        ? `row:${profile.id}`
-        : drag.destination
-          ? `group:${drag.destination.group}`
-          : null,
-    );
+    let indicator: string | null = null;
+    if (profile && target) {
+      const bounds = target.getBoundingClientRect();
+      const lowerHalf = event.clientY > bounds.top + bounds.height / 2;
+      const siblings =
+        sidebarGroups.find((g) => g.profiles.some((p) => p.id === profile.id))
+          ?.profiles ?? [];
+      const next = lowerHalf
+        ? siblings[siblings.findIndex((p) => p.id === profile.id) + 1]
+        : profile;
+      if (lowerHalf && !next) {
+        // Below the last row of its group: append to that group.
+        drag.destination = { group: profile.group ?? "", before: null };
+        indicator = `after:${profile.id}`;
+      } else {
+        drag.destination = { group: profile.group ?? "", before: next.id };
+        indicator = `row:${next.id}`;
+      }
+    } else if (target?.hasAttribute("data-session-group")) {
+      drag.destination = {
+        group: target.dataset.sessionGroup ?? "",
+        before: null,
+      };
+      indicator = `group:${drag.destination.group}`;
+    } else if (target?.hasAttribute("data-session-list")) {
+      // Empty space below the list: append to the last group.
+      const last = sidebarGroups[sidebarGroups.length - 1];
+      const lastRow = last?.profiles[last.profiles.length - 1];
+      drag.destination =
+        last && lastRow && last.name !== QUICK_GROUP
+          ? { group: last.name, before: null }
+          : null;
+      indicator = drag.destination ? `after:${lastRow!.id}` : null;
+    } else {
+      drag.destination = null;
+    }
+    setDropTarget(indicator);
   };
   const finishSessionPointer = (event: React.PointerEvent, cancel = false) => {
+    const groupDrag = pointerGroupDrag.current;
+    if (groupDrag) {
+      if (groupDrag.pointer !== event.pointerId) return;
+      pointerGroupDrag.current = null;
+      setDropTarget(null);
+      if (event.currentTarget.hasPointerCapture(event.pointerId))
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      if (groupDrag.active) {
+        event.preventDefault();
+        suppressSessionClick.current = true;
+        requestAnimationFrame(() => {
+          suppressSessionClick.current = false;
+        });
+        if (!cancel && groupDrag.destination)
+          moveGroup(groupDrag.name, groupDrag.destination.before);
+      }
+      return;
+    }
     const drag = pointerSessionDrag.current;
     if (!drag || drag.pointer !== event.pointerId) return;
     pointerSessionDrag.current = null;
@@ -1213,6 +1377,7 @@ function App() {
             </div>
             <div
               className="session-list"
+              data-session-list=""
               role="listbox"
               aria-label="Saved sessions"
               aria-multiselectable="true"
@@ -1228,30 +1393,45 @@ function App() {
                   {selectedSessions.length} selected
                 </div>
               )}
-              {(draggingSessions ||
-                sidebarGroups.some(
+              {draggingSessions &&
+                !sidebarGroups.some(
                   (g) => !g.name && g.profiles.length > 0,
-                )) && (
-                <div
-                  className={`session-dropzone ${dropTarget === "group:" ? "drop-target" : ""}`}
-                  aria-label="Move sessions to Ungrouped"
-                  data-session-group=""
-                >
-                  Ungrouped
-                </div>
-              )}
+                ) && (
+                  <div
+                    className={`session-dropzone ${dropTarget === "group:" ? "drop-target" : ""}`}
+                    aria-label="Move sessions to Ungrouped"
+                    data-session-group=""
+                  >
+                    Ungrouped
+                  </div>
+                )}
               {sidebarGroups.map((g) => {
                 const open =
                   !g.name || !!filter.trim() || !collapsed.has(g.name);
                 return (
                   <Fragment key={`group:${g.name}`}>
+                    {!g.name && (
+                      <div
+                        className={`session-dropzone draggable ${dropTarget === "group:" ? "drop-target" : ""} ${dropTarget === "gbefore:" ? "drop-before" : ""} ${dropTarget === "gafter:" ? "drop-after" : ""}`}
+                        aria-label="Move sessions to Ungrouped"
+                        data-session-group=""
+                        title="Drag to move the ungrouped sessions"
+                        onPointerDown={(e) => groupPointerDown(e, "")}
+                      >
+                        Ungrouped
+                      </div>
+                    )}
                     {g.name && (
                       <button
-                        className={`session-group ${dropTarget === `group:${g.name}` ? "drop-target" : ""}`}
+                        className={`session-group ${dropTarget === `group:${g.name}` ? "drop-target" : ""} ${dropTarget === `gbefore:${g.name}` ? "drop-before" : ""} ${dropTarget === `gafter:${g.name}` ? "drop-after" : ""}`}
                         data-session-group={g.name}
+                        onPointerDown={(e) => groupPointerDown(e, g.name)}
                         aria-expanded={open}
                         title={open ? "Collapse group" : "Expand group"}
-                        onClick={() => toggleGroup(g.name)}
+                        onClick={() => {
+                          if (suppressSessionClick.current) return;
+                          toggleGroup(g.name);
+                        }}
                         onContextMenu={(event) => {
                           event.preventDefault();
                           event.stopPropagation();
@@ -1297,7 +1477,7 @@ function App() {
                         const l = lives.find((l) => l.profileId === p.id);
                         return (
                           <div
-                            className={`session-row ${activeId === p.id ? "active" : ""} ${g.name ? "grouped" : ""} ${selectedSessions.includes(p.id) ? "selected" : ""} ${dropTarget === `row:${p.id}` ? "drop-before" : ""}`}
+                            className={`session-row ${activeId === p.id ? "active" : ""} ${g.name ? "grouped" : ""} ${selectedSessions.includes(p.id) ? "selected" : ""} ${dropTarget === `row:${p.id}` ? "drop-before" : ""} ${dropTarget === `after:${p.id}` ? "drop-after" : ""}`}
                             data-profile-id={p.id}
                             role="option"
                             aria-selected={selectedSessions.includes(p.id)}
@@ -2573,7 +2753,9 @@ function ProfileEditor({
                   value={p.mac_address ?? ""}
                   maxLength={17}
                   placeholder="02:11:22:33:44:55"
-                  onChange={(e) => change({ mac_address: e.target.value })}
+                  onChange={(e) =>
+                    change({ mac_address: e.target.value.replaceAll("-", ":") })
+                  }
                   onBlur={(e) =>
                     change({
                       mac_address: e.target.value

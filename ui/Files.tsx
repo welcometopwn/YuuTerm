@@ -339,6 +339,13 @@ export function Files({
     if (live && connected && !busy)
       navigation.current!.navigate(live.id, { kind: "path", path });
   };
+  const refreshRef = useRef(() => {});
+  refreshRef.current = () => browse(live?.meta?.path ?? ".");
+  useEffect(() => {
+    const onRefresh = () => refreshRef.current();
+    window.addEventListener("yuuterm:refresh-files", onRefresh);
+    return () => window.removeEventListener("yuuterm:refresh-files", onRefresh);
+  }, []);
   const browseParent = () => {
     if (live && connected && !busy)
       navigation.current!.navigate(live.id, { kind: "parent" });
@@ -514,14 +521,15 @@ export function Files({
     });
     if (result !== undefined) {
       setDialog(null);
-      const skipped = result.skipped
-        ? ` · ${result.skipped} symlinks/special files skipped`
-        : "";
-      error(
-        (result.changed ?? 0) > 1
-          ? `Permissions applied to ${result.changed} items${skipped}`
-          : "File operation completed",
-      );
+      if (kind === "permissions") {
+        if (result.skipped) {
+          error(
+            `Permissions applied to ${result.changed ?? 0} items · ${result.skipped} symlinks/special files skipped`,
+          );
+        }
+        return;
+      }
+      error("File operation completed");
     }
   };
   const inspect = async (

@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { memoryPair, networkRate } from "./statistics-format";
 import type { StatisticsSettings } from "./types";
 import { createPortal } from "react-dom";
@@ -58,15 +64,28 @@ type Process = { pid: number; cpu_percent: number; name: string };
 function Stat({
   className,
   title,
+  grow,
   children,
 }: {
   className: string;
   title: string;
+  /** Never shrink below the widest size reached, so the bar does not jitter. */
+  grow?: boolean;
   children: ReactNode;
 }) {
   const [frozen, setFrozen] = useState<string | null>(null);
+  const element = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const el = element.current;
+    if (!grow || !el) return;
+    const width = el.getBoundingClientRect().width;
+    if (width > (parseFloat(el.style.minWidth) || 0)) {
+      el.style.minWidth = `${Math.ceil(width)}px`;
+    }
+  });
   return (
     <span
+      ref={element}
       className={className}
       title={frozen ?? title}
       onMouseEnter={() => setFrozen(title)}
@@ -307,6 +326,8 @@ export function Statistics({
             </strong>
           </Stat>
           <Stat
+            key={networkUnit}
+            grow
             className="stat-upload"
             title={`Upload · ${sample.interface ?? "No interface"}\nTotal sent: ${sample.tx_bytes === null ? "Unavailable" : size(sample.tx_bytes)} (${sample.tx_bytes ?? "—"} bytes)\nInterface total since its counter reset; includes other connections`}
           >
@@ -314,6 +335,8 @@ export function Statistics({
             <strong>{networkRate(network.tx, networkUnit)}</strong>
           </Stat>
           <Stat
+            key={networkUnit}
+            grow
             className="stat-download"
             title={`Download · ${sample.interface ?? "No interface"}\nTotal received: ${sample.rx_bytes === null ? "Unavailable" : size(sample.rx_bytes)} (${sample.rx_bytes ?? "—"} bytes)\nInterface total since its counter reset; includes other connections`}
           >

@@ -75,7 +75,7 @@ async fn real_tcp_telnet_negotiation_input_resize_eof_and_no_ssh_dependencies() 
                 if received.windows(8).any(|w| w == b"one\xff\xfftwo")
                     && received
                         .windows(9)
-                        .any(|w| w == [255, 250, 31, 0, 240, 0, 100, 255, 240])
+                        .any(|w| w == [255, 250, 31, 1, 144, 0, 100, 255, 240])
                 {
                     break;
                 }

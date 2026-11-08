@@ -28,7 +28,7 @@ pub(crate) struct Terminal {
 }
 
 pub fn dimensions(rows: u16, cols: u16) -> (u16, u16) {
-    (rows.clamp(2, 100), cols.clamp(10, 240))
+    (rows.clamp(2, 100), cols.clamp(10, 400))
 }
 
 fn non_zero(value: u16) -> NonZeroU16 {
@@ -104,7 +104,7 @@ mod tests {
         t.process(b"\x1b[2J\x1b[Hok");
         assert_eq!(t.view().cells[0].text, "o");
         t.resize(65535, 65535);
-        assert_eq!((t.view().rows, t.view().cols), (100, 240));
+        assert_eq!((t.view().rows, t.view().cols), (100, 400));
         t.process(b"\x1b]52;c;aGVsbG8=\x07"); // ignored; no clipboard callback installed
     }
 }

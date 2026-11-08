@@ -34,6 +34,7 @@ mod single_instance;
 mod telnet_external_capture;
 mod vnc;
 mod vnc_real_capture;
+mod window_state;
 mod windows_openssh_capture;
 mod x11_desktop;
 
@@ -2116,20 +2117,43 @@ fn main() {
                 }
                 _ => builder,
             };
+            let geometry = window_state::load();
             let window = builder
                 .title(window_title())
                 .decorations(false)
                 .shadow(true)
+                // The strip at the top edge shows the window background, not the
+                // page: match the title bar so it does not flash light.
+                .background_color(tauri::window::Color(0x20, 0x21, 0x25, 0xFF))
+                .visible(geometry.is_none())
                 .inner_size(1280.0, 820.0)
                 .min_inner_size(900.0, 600.0)
                 .on_navigation(ipc_origin::allowed)
                 .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
                 .build()?;
+            if let Some(geometry) = &geometry {
+                window_state::restore(&window, geometry);
+                window.show()?;
+            }
+            app.manage(window_state::Tracker::default());
             single_instance::publish(&mut lease, &window)?;
             app.manage(lease);
             Ok(())
         })
         .on_window_event(|window, event| {
+            if matches!(
+                event,
+                tauri::WindowEvent::Resized(_)
+                    | tauri::WindowEvent::Moved(_)
+                    | tauri::WindowEvent::CloseRequested { .. }
+            ) && let Some(webview) = window.app_handle().get_webview_window(window.label())
+                && let Some(tracker) = window.try_state::<window_state::Tracker>()
+            {
+                tracker.update(
+                    &webview,
+                    matches!(event, tauri::WindowEvent::CloseRequested { .. }),
+                );
+            }
             if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, position }) =
                 event
                 && let Some(token) = file_ui::record_drop(paths.clone())

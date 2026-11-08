@@ -117,7 +117,7 @@ export async function checkTerminalFeatures(
       }),
     );
     const cols = Number(host().dataset.terminalCols);
-    if (cols < 5 || cols > 240)
+    if (cols < 5 || cols > 400)
       throw Error("Fixture geometry outside highlighting bounds");
     const prefix = "\x1b[3J\x1b[2J\x1b[H" + " ".repeat(cols - 2);
     await send(prefix + "ERROR\r\n");

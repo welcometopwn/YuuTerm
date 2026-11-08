@@ -82,7 +82,7 @@ export function highlightCells(
   config: Highlighting,
   rules: CompiledRule[] = compileHighlightWords(config),
 ): HighlightSpan[] {
-  return highlightBounded(cells, config, rules, 240);
+  return highlightBounded(cells, config, rules, 400);
 }
 
 function highlightBounded(
@@ -184,7 +184,7 @@ export function highlightViewport(
 ): HighlightSpan[][] {
   if (rows.length > 100) return [];
   const result: HighlightSpan[][] = rows.map(() => []);
-  if (rows.some((r) => r.cells.length > 240)) return result;
+  if (rows.some((r) => r.cells.length > 400)) return result;
   for (let start = 0; start < rows.length;) {
     let end = start + 1;
     while (end < rows.length && rows[end].isWrapped) end++;
