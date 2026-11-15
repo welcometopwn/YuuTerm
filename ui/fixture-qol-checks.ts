@@ -436,12 +436,21 @@ export async function checkQol(
     "Directory batch also requires confirmation",
   );
   button("Delete selected permanently").click();
+  const prompt = 'dialog[aria-label="Folder is not empty"]';
+  await until(
+    () => !!document.querySelector(prompt),
+    "A folder that is not empty asks before it is deleted with everything inside",
+  );
+  await new Promise((r) => setTimeout(r, 300));
+  await invoke("capture_still", { name: "delete-not-empty" });
+  await new Promise((r) => setTimeout(r, 1500));
+  button("Cancel", prompt).click();
   await until(
     () =>
       document
         .querySelector('dialog [role="alert"]')
-        ?.textContent?.includes("stopped") ?? false,
-    "Nonempty-directory failure stops the deletion batch",
+        ?.textContent?.includes("folder was kept") ?? false,
+    "Declining the prompt stops the deletion batch and keeps the folder",
   );
   if (!document.querySelector('[aria-label="Actions for qol-folder"]'))
     throw new Error("Deletion continued after a failed item");
