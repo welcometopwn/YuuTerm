@@ -21,6 +21,9 @@ unknown publisher. If WebView2 is missing, Windows asks you to install it.
 Settings stay on your PC, and saved passwords go into the Windows Credential
 Manager. The portable version keeps its settings next to the exe.
 
+Once per start, YuuTerm asks GitHub whether a newer release exists and only tells
+you; it never downloads or installs anything. Turn it off in Settings > General.
+
 ## Building
 
 You need Rust, Node.js, WebView2 and the Visual Studio Build Tools (C++ desktop
