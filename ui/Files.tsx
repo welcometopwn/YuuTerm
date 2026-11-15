@@ -472,7 +472,7 @@ export function Files({
     } catch (e) {
       if (!String(e).includes("Directory is not empty")) throw e;
       const yes = await new Promise<boolean>((answer) =>
-        setNonEmpty({ name: displayName(target.path), answer }),
+        setNonEmpty({ name: target.entry.name, answer }),
       );
       setNonEmpty(null);
       if (!yes) throw new Error("Cancelled; the folder was kept.");
