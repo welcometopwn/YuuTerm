@@ -11,16 +11,26 @@ use windows::{
 };
 
 pub const URL: &str = "https://github.com/welcometopwn/yuuterm";
+const RELEASES_URL: &str = "https://github.com/welcometopwn/yuuterm/releases/latest";
 
 #[tauri::command]
 pub async fn open_project_page() -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(|| unsafe {
+    open(URL).await
+}
+
+#[tauri::command]
+pub async fn open_release_page() -> Result<(), String> {
+    open(RELEASES_URL).await
+}
+
+async fn open(url: &'static str) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || unsafe {
         // ShellExecute may use COM; Microsoft recommends an STA without OLE1 DDE.
         let com = CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE).is_ok();
         let result = ShellExecuteW(
             None,
             w!("open"),
-            &HSTRING::from(URL),
+            &HSTRING::from(url),
             None,
             None,
             SW_SHOWNORMAL,
@@ -32,7 +42,7 @@ pub async fn open_project_page() -> Result<(), String> {
         if result.0 as usize > 32 {
             Ok(())
         } else {
-            Err(format!("Could not open {URL} in the default browser"))
+            Err(format!("Could not open {url} in the default browser"))
         }
     })
     .await

@@ -1,10 +1,22 @@
 export type Protocol = "Ssh" | "Telnet" | "Rdp" | "Vnc" | "Serial" | "Local";
-export type LocalShell = "PowerShell" | "WindowsPowerShell" | "Cmd";
+export type LocalShell =
+  "PowerShell" | "WindowsPowerShell" | "Cmd" | "GitBash" | "Wsl" | "Cygwin";
+export const localShells: LocalShell[] = [
+  "PowerShell",
+  "WindowsPowerShell",
+  "Cmd",
+  "GitBash",
+  "Wsl",
+  "Cygwin",
+];
 export const localShellLabel = (s: LocalShell) =>
   ({
     PowerShell: "PowerShell 7",
     WindowsPowerShell: "Windows PowerShell",
     Cmd: "Command Prompt",
+    GitBash: "Git Bash",
+    Wsl: "WSL",
+    Cygwin: "Cygwin",
   })[s];
 export interface Profile {
   id: number;
@@ -80,6 +92,8 @@ export interface Preferences {
   scrollback_lines: number;
   highlighting: Highlighting;
   statistics: StatisticsSettings;
+  local_shell?: LocalShell;
+  update_check?: boolean;
 }
 export interface StatisticsSettings {
   enabled: boolean;
@@ -168,7 +182,7 @@ export const connectable = (p: Protocol) =>
   p === "Rdp" ||
   p === "Vnc" ||
   p === "Local";
-export const blankProfile = (): Profile => ({
+export const blankProfile = (shell: LocalShell = "PowerShell"): Profile => ({
   id: 0,
   name: "",
   protocol: "Ssh",
@@ -198,7 +212,7 @@ export const blankProfile = (): Profile => ({
   },
   rdp: { clipboard: true, audio: "Off", keyboard: "Remote" },
   vnc: { auth: "Plain" },
-  local: { shell: "PowerShell", directory: "" },
+  local: { shell, directory: "" },
 });
 export const protocolLabel = (p: Protocol) =>
   ({

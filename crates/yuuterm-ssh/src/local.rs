@@ -106,6 +106,28 @@ pub fn shell_path(shell: LocalShell) -> Result<PathBuf> {
     let path = match shell {
         LocalShell::Cmd => system.join("cmd.exe"),
         LocalShell::WindowsPowerShell => system.join(r"WindowsPowerShell\v1.0\powershell.exe"),
+        LocalShell::GitBash => [
+            ("ProgramFiles", r"Git\bin\bash.exe"),
+            ("ProgramW6432", r"Git\bin\bash.exe"),
+            ("ProgramFiles(x86)", r"Git\bin\bash.exe"),
+            ("LOCALAPPDATA", r"Programs\Git\bin\bash.exe"),
+        ]
+        .into_iter()
+        .filter_map(|(var, rest)| std::env::var_os(var).map(|base| PathBuf::from(base).join(rest)))
+        .find(|p| p.is_file())
+        .context("Git Bash is not installed; install Git for Windows or choose another shell")?,
+        LocalShell::Cygwin => [r"C:\cygwin64\bin\bash.exe", r"C:\cygwin\bin\bash.exe"]
+            .into_iter()
+            .map(PathBuf::from)
+            .find(|p| p.is_file())
+            .context("Cygwin is not installed")?,
+        LocalShell::Wsl => {
+            anyhow::ensure!(
+                wsl_has_distribution(),
+                "No WSL distribution is installed; run wsl --install in a terminal"
+            );
+            system.join("wsl.exe")
+        }
         LocalShell::PowerShell => {
             let installed = std::env::var_os("ProgramFiles")
                 .map(|p| PathBuf::from(p).join(r"PowerShell\7\pwsh.exe"));
@@ -121,6 +143,51 @@ pub fn shell_path(shell: LocalShell) -> Result<PathBuf> {
     };
     anyhow::ensure!(path.exists(), "{} is not available", shell.label());
     Ok(path)
+}
+
+fn wsl_has_distribution() -> bool {
+    use windows::Win32::System::Registry::{
+        HKEY, HKEY_CURRENT_USER, KEY_READ, RegCloseKey, RegEnumKeyExW, RegOpenKeyExW,
+    };
+    let path = wide(r"Software\Microsoft\Windows\CurrentVersion\Lxss");
+    let mut key = HKEY::default();
+    if unsafe {
+        RegOpenKeyExW(
+            HKEY_CURRENT_USER,
+            PCWSTR(path.as_ptr()),
+            None,
+            KEY_READ,
+            &mut key,
+        )
+    }
+    .is_err()
+    {
+        return false;
+    }
+    let mut name = [0u16; 256];
+    let mut length = name.len() as u32;
+    let found = unsafe {
+        RegEnumKeyExW(
+            key,
+            0,
+            Some(PWSTR(name.as_mut_ptr())),
+            &mut length,
+            None,
+            None,
+            None,
+            None,
+        )
+    }
+    .is_ok();
+    let _ = unsafe { RegCloseKey(key) };
+    found
+}
+
+pub fn available_shells() -> Vec<LocalShell> {
+    LocalShell::ALL
+        .into_iter()
+        .filter(|shell| shell_path(*shell).is_ok())
+        .collect()
 }
 
 fn start_directory(directory: &str) -> PathBuf {
@@ -187,6 +254,11 @@ fn spawn(shell: LocalShell, directory: &str, rows: u16, cols: u16) -> Result<(Pt
     let application = wide(&program.to_string_lossy());
     let mut command_line = wide(&match shell {
         LocalShell::Cmd => format!("\"{}\"", program.display()),
+        LocalShell::GitBash | LocalShell::Cygwin => {
+            format!("\"{}\" --login -i", program.display())
+        }
+        LocalShell::Wsl if directory.is_empty() => format!("\"{}\" --cd ~", program.display()),
+        LocalShell::Wsl => format!("\"{}\"", program.display()),
         _ => format!("\"{}\" -NoLogo", program.display()),
     });
     let directory = wide(&cwd.to_string_lossy());
@@ -440,6 +512,40 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(code, 5);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn git_bash_starts_when_installed() {
+        let Ok(path) = shell_path(LocalShell::GitBash) else {
+            eprintln!("Git Bash not installed; skipped");
+            return;
+        };
+        eprintln!("Git Bash at {}", path.display());
+        let (pty, _pipe) = spawn(LocalShell::GitBash, "", 24, 80).unwrap();
+        pty.write(b"exit 5\r").unwrap();
+        let waiter = duplicate(&pty.process).unwrap();
+        let code = tokio::task::spawn_blocking(move || {
+            let waiter = waiter;
+            unsafe { WaitForSingleObject(waiter.0, 20_000) };
+            let mut code = 0;
+            unsafe { GetExitCodeProcess(waiter.0, &mut code) }.unwrap();
+            code
+        })
+        .await
+        .unwrap();
+        assert_eq!(code, 5);
+    }
+
+    #[test]
+    fn available_shells_list_only_installed_shells() {
+        let shells = available_shells();
+        eprintln!("available: {shells:?}");
+        assert!(shells.contains(&LocalShell::Cmd));
+        assert!(shells.contains(&LocalShell::WindowsPowerShell));
+        assert_eq!(shells.contains(&LocalShell::Wsl), wsl_has_distribution());
+        for shell in shells {
+            assert!(shell_path(shell).unwrap().is_file());
+        }
     }
 
     #[tokio::test(flavor = "multi_thread")]

@@ -104,7 +104,7 @@ async fn main() -> Result<()> {
         std::fs::write(folder.join("readonly-properties.json"),serde_json::to_vec_pretty(&read_only)?)?;
         files.execute(FileAction::Permissions{path:renamed.clone(),mode:0o644,recursive:false},cancel.clone()).await.map_err(anyhow::Error::msg)?;
         checks.push("SFTP rename and permission requests complete; mapped attributes recorded separately".into());
-        files.execute(FileAction::Delete{path:renamed},cancel.clone()).await.map_err(anyhow::Error::msg)?;
+        files.execute(FileAction::Delete{path:renamed,recursive:false},cancel.clone()).await.map_err(anyhow::Error::msg)?;
         checks.push("SFTP deletes the renamed file".into());
         let edit_path=format!("{remote}/editor.txt");
         files.execute(FileAction::Upload{path:edit_path.clone(),local:unicode.clone()},cancel.clone()).await.map_err(anyhow::Error::msg)?;

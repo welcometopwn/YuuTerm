@@ -6,6 +6,9 @@ use std::{
 };
 
 const MAX_BYTES: u64 = 1024 * 1024;
+fn default_true() -> bool {
+    true
+}
 fn default_scrollback() -> u32 {
     500
 }
@@ -28,6 +31,10 @@ pub struct Preferences {
     pub highlighting: Highlighting,
     #[serde(default)]
     pub statistics: StatisticsSettings,
+    #[serde(default)]
+    pub local_shell: crate::LocalShell,
+    #[serde(default = "default_true")]
+    pub update_check: bool,
 }
 
 #[derive(Clone, Copy, Default, Serialize, Deserialize)]
@@ -268,6 +275,7 @@ impl Preferences {
             font_size: 14.0,
             font_family: default_terminal_font(),
             scrollback_lines: default_scrollback(),
+            update_check: true,
             ..Default::default()
         }
     }
@@ -677,6 +685,24 @@ mod tests {
         std::fs::remove_file(&path).unwrap();
         std::fs::remove_dir(&dir).unwrap();
     }
+    #[test]
+    fn update_check_is_on_for_new_and_older_settings_files() {
+        assert!(Preferences::fresh().update_check);
+        let old = r#"{"version":1,"profiles":[],"mocha":false,"font_size":14.0}"#;
+        assert!(
+            serde_json::from_str::<Preferences>(old)
+                .unwrap()
+                .update_check
+        );
+        let off =
+            r#"{"version":1,"profiles":[],"mocha":false,"font_size":14.0,"update_check":false}"#;
+        assert!(
+            !serde_json::from_str::<Preferences>(off)
+                .unwrap()
+                .update_check
+        );
+    }
+
     #[test]
     fn reject_ambiguous_or_unbounded_settings() {
         let mut p = Preferences::fresh();

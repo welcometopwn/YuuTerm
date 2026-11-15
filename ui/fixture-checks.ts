@@ -1744,8 +1744,8 @@ async function checkStatisticsSettings(
     () =>
       field("Show host statistics by default").checked &&
       field("Network rate unit").value === "Megabytes" &&
-      document.querySelectorAll('[role="tab"]').length === 4,
-    "Global Settings has four sections, statistics enabled by default and MB/s selected",
+      document.querySelectorAll('[role="tab"]').length === 5,
+    "Global Settings has five sections, statistics enabled by default and MB/s selected",
   );
   unit("Kilobytes");
   await until(

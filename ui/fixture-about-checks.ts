@@ -42,7 +42,13 @@ export async function checkAbout(
     "Settings dialog offers an About section",
   );
   const heights: number[] = [];
-  for (const name of ["appearance", "highlighting", "statistics", "about"]) {
+  for (const name of [
+    "appearance",
+    "general",
+    "highlighting",
+    "statistics",
+    "about",
+  ]) {
     document.getElementById(`settings-tab-${name}`)!.click();
     await new Promise((r) => setTimeout(r, 80));
     heights.push(document.querySelector("dialog")!.offsetHeight);

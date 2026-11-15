@@ -6,6 +6,8 @@ import { SettingsTabs } from "./SettingsTabs";
 import { Modal } from "./Modal";
 import { compileRegex } from "./highlight-policy";
 import { terminalFontChoices } from "./terminal-font";
+import { LocalShellSelect } from "./LocalShellSelect";
+import type { UpdateStatus } from "./UpdateNotice";
 import type { Preferences } from "./types";
 import { defaultHighlighting } from "./highlight-defaults";
 import { HighlightImport } from "./HighlightImport";
@@ -32,6 +34,27 @@ export function Appearance({
   const saving = useRef(false);
   const [problem, setProblem] = useState("");
   const [confirmReset, setConfirmReset] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [updateText, setUpdateText] = useState("");
+  const [updateFound, setUpdateFound] = useState(false);
+  const checkUpdate = async () => {
+    setChecking(true);
+    setUpdateFound(false);
+    setUpdateText("");
+    try {
+      const s = await invoke<UpdateStatus>("check_for_update");
+      setUpdateFound(s.available);
+      setUpdateText(
+        s.available
+          ? `YuuTerm ${s.latest} is available.`
+          : "You have the latest version.",
+      );
+    } catch (e) {
+      setUpdateText(String(e));
+    } finally {
+      setChecking(false);
+    }
+  };
   useEffect(() => onPreview(draft), [draft, onPreview]);
   const updateHighlight = (patch: Partial<Preferences["highlighting"]>) =>
     setDraft((p) => ({ ...p, highlighting: { ...p.highlighting, ...patch } }));
@@ -99,6 +122,8 @@ export function Appearance({
           scrollbackLines: draft.scrollback_lines,
           highlighting: draft.highlighting,
           statistics: draft.statistics,
+          localShell: draft.local_shell ?? "PowerShell",
+          updateCheck: draft.update_check ?? true,
         }),
       );
     } catch (e) {
@@ -113,7 +138,7 @@ export function Appearance({
       <SettingsTabs
         prefix="settings"
         label="Settings sections"
-        tabs={["appearance", "highlighting", "statistics", "about"]}
+        tabs={["appearance", "general", "highlighting", "statistics", "about"]}
         value={tab}
         onChange={setTab}
       />
@@ -213,6 +238,43 @@ export function Appearance({
           <p className="muted">
             Applies after Save to all terminals. Reducing the limit discards
             older output. Zero keeps only the screen.
+          </p>
+        </div>
+        <div
+          role="tabpanel"
+          id="settings-panel-general"
+          aria-labelledby="settings-tab-general"
+          hidden={tab !== "general"}
+        >
+          <label>
+            Local terminal shell
+            <LocalShellSelect
+              label="Local terminal shell"
+              value={draft.local_shell ?? "PowerShell"}
+              onChange={(local_shell) =>
+                setDraft((p) => ({ ...p, local_shell }))
+              }
+            />
+          </label>
+          <p className="muted">
+            Used by the Local terminal button and for new local sessions. Each
+            local session can choose its own shell. Shells that are not
+            installed are greyed out.
+          </p>
+          <label className="check-label">
+            <input
+              type="checkbox"
+              aria-label="Check for updates at startup"
+              checked={draft.update_check ?? true}
+              onChange={(e) =>
+                setDraft((p) => ({ ...p, update_check: e.target.checked }))
+              }
+            />
+            Check for updates at startup
+          </label>
+          <p className="muted">
+            Asks GitHub once per start whether a newer release exists. Nothing
+            is downloaded or installed.
           </p>
         </div>
         <div
@@ -421,6 +483,25 @@ export function Appearance({
             <dd>MIT</dd>
             <dt>Copyright</dt>
             <dd>© 2026 welcometopwn</dd>
+            <dt>Updates</dt>
+            <dd>
+              <button disabled={checking} onClick={() => void checkUpdate()}>
+                {checking ? "Checking…" : "Check for updates"}
+              </button>{" "}
+              <span role="status">{updateText}</span>{" "}
+              {updateFound && (
+                <button
+                  className="link-button"
+                  onClick={() =>
+                    void invoke("open_release_page").catch((e) =>
+                      setProblem(String(e)),
+                    )
+                  }
+                >
+                  Open download page
+                </button>
+              )}
+            </dd>
             <dt>Project</dt>
             <dd>
               <button
