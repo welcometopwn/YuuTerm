@@ -7893,7 +7893,7 @@ dependencies = [
 
 [[package]]
 name = "yuuterm"
-version = "0.4.0"
+version = "0.3.2"
 dependencies = [
  "eframe",
  "image",
@@ -7905,7 +7905,7 @@ dependencies = [
 
 [[package]]
 name = "yuuterm-core"
-version = "0.4.0"
+version = "0.3.2"
 dependencies = [
  "base64 0.23.1",
  "encoding_rs",
@@ -7916,7 +7916,7 @@ dependencies = [
 
 [[package]]
 name = "yuuterm-desktop"
-version = "0.4.0"
+version = "0.3.2"
 dependencies = [
  "image",
  "lzma-rust2",
@@ -7941,7 +7941,7 @@ dependencies = [
 
 [[package]]
 name = "yuuterm-ssh"
-version = "0.4.0"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "des",

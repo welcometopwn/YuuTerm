@@ -1,7 +1,7 @@
 {
   "name": "yuuterm-ui",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.3.2",
   "type": "module",
   "scripts": {
     "test:ui": "node --test tests/*.test.ts",
