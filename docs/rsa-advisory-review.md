@@ -1,5 +1,14 @@
 # RSA advisory exposure review
 
+Recheck, 15 November 2026: russh 0.65.1 replaces 0.65.0. `src/helpers.rs`, which
+dispatches RSA signing, is byte-identical to 0.65.0. The other changes are a
+public key file comment parser, a packet length check that now counts the MAC tag,
+a strict-KEX guess flag, ECDSA signature canonicalization and a dependency feature
+change; apart from one test string, no changed line in `src` mentions RSA. The rsa and ssh-key versions and
+checksums and the YuuTerm authentication source hash are unchanged, and the
+manifest records the russh 0.65.1 checksum. The accepted risk is unchanged and the
+next review is due 15 December 2026.
+
 Security maintenance recheck, 1 November 2026: upgraded russh to 0.65.0.
 The crate archives match Cargo checksums. The rsa and ssh-key versions/checksums
 and YuuTerm authentication source hash are unchanged. Upstream `src/helpers.rs`,
@@ -14,7 +23,7 @@ review, not an RSA advisory fix. The transitive crypto-bigint and ctutils securi
 updates are 0.7.10 and 0.4.7; they address separate timing advisories without
 removing the existing rsa advisory or changing its accepted scope.
 
-Reviewed 20 October 2026; next review due 19 November 2026 UTC. Maintainer: welcometopwn.
+Reviewed 20 October 2026; next review due 15 December 2026 UTC. Maintainer: welcometopwn.
 
 ## Reproducible dependency and call-path evidence
 
