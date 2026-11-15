@@ -193,6 +193,7 @@ export function Files({
     [name, setName] = useState(""),
     [mode, setMode] = useState(""),
     [recursive, setRecursive] = useState(false),
+    [deleteContents, setDeleteContents] = useState(false),
     [busy, setBusy] = useState(false),
     [problem, setProblem] = useState(""),
     [edits, setEdits] = useState<Edit[]>([]);
@@ -426,6 +427,7 @@ export function Files({
   const requestDelete = () => {
     if (busy || !connected || !targets.length) return;
     setProblem("");
+    setDeleteContents(false);
     setBulkDelete(targets);
   };
   const downloadSelected = async (items: Target[] = targets) => {
@@ -476,7 +478,11 @@ export function Files({
           throw new Error("Original connection is no longer active.");
         await invoke("file_action", {
           id: target.id,
-          action: { kind: "delete", path: target.path },
+          action: {
+            kind: "delete",
+            path: target.path,
+            recursive: deleteContents,
+          },
         });
         completed++;
         setBulkDelete(
@@ -1263,10 +1269,16 @@ export function Files({
           onClose={busy ? undefined : () => setBulkDelete(null)}
         >
           <p>
-            Permanently delete these {bulkDelete.length} items? Directories must
-            be empty; deletion is never recursive. Processing stops on the first
-            error.
+            Permanently delete these {bulkDelete.length} items? Processing stops
+            on the first error.
           </p>
+          {bulkDelete.some((t) => t.entry.directory && !t.entry.symlink) && (
+            <DeleteContents
+              checked={deleteContents}
+              disabled={busy}
+              onChange={setDeleteContents}
+            />
+          )}
           <ul className="bulk-items">
             {bulkDelete
               .filter((t) => selected.includes(t.entry.name))
@@ -1442,8 +1454,10 @@ export function Files({
                     {
                       label: "Delete",
                       disabled: busy || !connected,
-                      run: () =>
-                        setDialog({ kind: "delete", target: fileMenu.target! }),
+                      run: () => {
+                        setDeleteContents(false);
+                        setDialog({ kind: "delete", target: fileMenu.target! });
+                      },
                     },
                     {
                       label: "Copy file path",
@@ -1515,10 +1529,15 @@ export function Files({
           )}
           {dialog.kind === "delete" && (
             <>
-              <p>
-                This permanently removes the selected remote item. Directories
-                must be empty; deletion is never recursive.
-              </p>
+              <p>This permanently removes the selected remote item.</p>
+              {dialog.target.entry.directory &&
+                !dialog.target.entry.symlink && (
+                  <DeleteContents
+                    checked={deleteContents}
+                    disabled={busy}
+                    onChange={setDeleteContents}
+                  />
+                )}
               <div className="dialog-actions">
                 <button disabled={busy} onClick={() => setDialog(null)}>
                   Cancel
@@ -1526,7 +1545,9 @@ export function Files({
                 <button
                   className="danger"
                   disabled={busy}
-                  onClick={() => void action(dialog, "delete")}
+                  onClick={() =>
+                    void action(dialog, "delete", { recursive: deleteContents })
+                  }
                 >
                   Delete permanently
                 </button>
@@ -1631,5 +1652,35 @@ export function Files({
         </Modal>
       )}
     </div>
+  );
+}
+
+function DeleteContents({
+  checked,
+  disabled,
+  onChange,
+}: {
+  checked: boolean;
+  disabled: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <>
+      <label className="check-label">
+        <input
+          type="checkbox"
+          aria-label="Also delete files and folders inside"
+          checked={checked}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.checked)}
+        />
+        Yes, also delete all files and subfolders inside on the server
+      </label>
+      <p className="hint">
+        {checked
+          ? "Everything inside the folder is removed first. This cannot be undone."
+          : "Folders that are not empty are not deleted."}
+      </p>
+    </>
   );
 }

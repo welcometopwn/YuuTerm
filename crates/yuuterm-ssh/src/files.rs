@@ -52,6 +52,7 @@ pub enum FileAction {
     },
     Delete {
         path: String,
+        recursive: bool,
     },
     Permissions {
         path: String,
@@ -92,7 +93,7 @@ impl FileAction {
             | Self::Resolve { path }
             | Self::Properties { path }
             | Self::Rename { path, .. }
-            | Self::Delete { path }
+            | Self::Delete { path, .. }
             | Self::Permissions { path, .. }
             | Self::Download { path, .. }
             | Self::Upload { path, .. }
@@ -367,8 +368,11 @@ pub(crate) async fn execute(
             sftp.rename(path, target).await?;
             Ok(FileResult::default())
         }
-        FileAction::Delete { .. } => {
+        FileAction::Delete { recursive, .. } => {
             let attrs = sftp.lstat(path).await?.attrs;
+            if attrs.is_dir() && *recursive {
+                return delete_tree(sftp, path).await;
+            }
             if attrs.is_dir() {
                 sftp.rmdir(path).await?;
             } else {
@@ -742,6 +746,57 @@ async fn chmod_tree(sftp: &RawSftpSession, path: &str, mode: u32) -> Result<File
         set_mode(sftp, target, mode).await.with_context(|| {
             format!(
                 "{target}: recursive permissions stopped after {} entries",
+                result.changed
+            )
+        })?;
+        result.changed += 1;
+    }
+    Ok(result)
+}
+
+async fn delete_tree(sftp: &RawSftpSession, path: &str) -> Result<FileResult> {
+    let root = path.trim_end_matches('/').to_owned();
+    ensure!(!root.is_empty(), "The root directory is never deleted");
+    let mut directories = vec![root.clone()];
+    let mut files = Vec::new();
+    let mut pending = vec![(root, 0)];
+    while let Some((remote, depth)) = pending.pop() {
+        for (name, attrs) in list(sftp, &remote).await? {
+            ensure!(
+                directories.len() + files.len() < MAX_TREE_ENTRIES,
+                "Deleting stopped at {MAX_TREE_ENTRIES} entries; nothing was deleted"
+            );
+            let child = format!("{remote}/{name}");
+            ensure!(
+                child.len() <= 4096,
+                "Remote child path exceeds the 4096-byte limit; nothing was deleted"
+            );
+            if attrs.is_dir() && !attrs.is_symlink() {
+                ensure!(
+                    depth < MAX_TREE_DEPTH,
+                    "{child} is nested deeper than {MAX_TREE_DEPTH} levels; nothing was deleted"
+                );
+                directories.push(child.clone());
+                pending.push((child, depth + 1));
+            } else {
+                files.push(child);
+            }
+        }
+    }
+    let mut result = FileResult::default();
+    for target in &files {
+        sftp.remove(target).await.with_context(|| {
+            format!(
+                "{target}: deleting stopped after {} entries",
+                result.changed
+            )
+        })?;
+        result.changed += 1;
+    }
+    for target in directories.iter().rev() {
+        sftp.rmdir(target).await.with_context(|| {
+            format!(
+                "{target}: deleting stopped after {} entries",
                 result.changed
             )
         })?;

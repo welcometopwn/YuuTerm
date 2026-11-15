@@ -32,6 +32,7 @@ mod session_actions;
 mod session_transfer;
 mod single_instance;
 mod telnet_external_capture;
+mod update_check;
 mod vnc;
 mod vnc_real_capture;
 mod window_state;
@@ -282,6 +283,11 @@ async fn serial_ports(window: WebviewWindow) -> Result<Vec<String>, String> {
         .map_err(|e| e.to_string())?
 }
 
+#[tauri::command]
+fn local_shells(window: WebviewWindow) -> Result<Vec<yuuterm_core::LocalShell>, String> {
+    main_only(&window)?;
+    Ok(yuuterm_ssh::local::available_shells())
+}
 #[tauri::command]
 fn bootstrap(window: WebviewWindow, state: State<Backend>) -> Result<Bootstrap, String> {
     main_only(&window)?;
@@ -992,6 +998,8 @@ fn save_appearance(
     scrollback_lines: Option<u32>,
     highlighting: config::Highlighting,
     statistics: config::StatisticsSettings,
+    local_shell: Option<yuuterm_core::LocalShell>,
+    update_check: Option<bool>,
 ) -> Result<Preferences, String> {
     main_only(&window)?;
     let mut c = lock(&state.config)?;
@@ -1011,10 +1019,33 @@ fn save_appearance(
     }
     candidate.highlighting = highlighting;
     candidate.statistics = statistics;
+    if let Some(shell) = local_shell {
+        candidate.local_shell = shell;
+    }
+    if let Some(enabled) = update_check {
+        candidate.update_check = enabled;
+    }
     candidate.validate()?;
     if !capture_only {
         config::save(&candidate)?;
     }
+    c.prefs = candidate.clone();
+    Ok(candidate)
+}
+#[tauri::command]
+fn set_update_check(
+    window: WebviewWindow,
+    state: State<Backend>,
+    enabled: bool,
+) -> Result<Preferences, String> {
+    main_only(&window)?;
+    let mut c = lock(&state.config)?;
+    if !c.can_save {
+        return Err("Settings saving is disabled".into());
+    }
+    let mut candidate = c.prefs.clone();
+    candidate.update_check = enabled;
+    config::save(&candidate)?;
     c.prefs = candidate.clone();
     Ok(candidate)
 }
@@ -2232,6 +2263,9 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             project_page::open_project_page,
+            project_page::open_release_page,
+            update_check::check_for_update,
+            set_update_check,
             change_group,
             bootstrap,
             vnc::vnc_open,
@@ -2265,6 +2299,7 @@ fn main() {
             session_actions::move_profiles,
             session_actions::wake_profiles,
             save_appearance,
+            local_shells,
             session_start,
             session_poll,
             session_input,

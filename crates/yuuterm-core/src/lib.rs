@@ -224,6 +224,20 @@ pub enum LocalShell {
     PowerShell,
     WindowsPowerShell,
     Cmd,
+    GitBash,
+    Wsl,
+    Cygwin,
+}
+
+impl LocalShell {
+    pub const ALL: [Self; 6] = [
+        Self::PowerShell,
+        Self::WindowsPowerShell,
+        Self::Cmd,
+        Self::GitBash,
+        Self::Wsl,
+        Self::Cygwin,
+    ];
 }
 
 impl LocalShell {
@@ -232,6 +246,9 @@ impl LocalShell {
             Self::PowerShell => "PowerShell 7",
             Self::WindowsPowerShell => "Windows PowerShell",
             Self::Cmd => "Command Prompt",
+            Self::GitBash => "Git Bash",
+            Self::Wsl => "WSL",
+            Self::Cygwin => "Cygwin",
         }
     }
 }

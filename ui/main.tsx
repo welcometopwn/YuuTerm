@@ -74,9 +74,7 @@ import {
   connectable,
   rdpSettings,
   protocolLabel,
-  localShellLabel,
   sessionDetail,
-  type LocalShell,
   type Bootstrap,
   type Live,
   type Meta,
@@ -84,6 +82,8 @@ import {
   type Profile,
   type Protocol,
 } from "./types";
+import { LocalShellSelect } from "./LocalShellSelect";
+import { UpdateNotice, type UpdateStatus } from "./UpdateNotice";
 import {
   parseDestination,
   explicitDestination,
@@ -177,6 +177,7 @@ function App() {
   const [rdpProbe, setRdpProbe] = useState(false);
   const [rdpLive, setRdpLive] = useState(false);
   const [appearance, setAppearance] = useState<Preferences | null>(null);
+  const [update, setUpdate] = useState<UpdateStatus | null>(null);
   const [editMonitoring, setEditMonitoring] = useState(false);
   const [autoUploadIds, setAutoUploadIds] = useState<number[]>([]);
   const [noticeBottom, setNoticeBottom] = useState(12);
@@ -355,6 +356,10 @@ function App() {
         setCanSave(b.can_save);
         if (!b.can_save && !b.fixture) setNotice(b.notice);
         setFixture(b.fixture);
+        if (!b.fixture && b.prefs.update_check !== false)
+          void invoke<UpdateStatus>("check_for_update")
+            .then((status) => status.available && setUpdate(status))
+            .catch(() => {});
         if (b.fixture) {
           const scope = await invoke<string>("capture_scope");
           setFixtureScope(scope);
@@ -777,7 +782,7 @@ function App() {
         for (let n = 2; names.has(name); n++) name = `Local terminal ${n}`;
         const updated = await invoke<Preferences>("save_profile", {
           profile: {
-            ...blankProfile(),
+            ...blankProfile(prefs.local_shell),
             name,
             protocol: "Local",
             port: 0,
@@ -938,8 +943,9 @@ function App() {
           )
         : null;
       const top = (header ?? target)?.getBoundingClientRect().top ?? 0;
-      const bottom = (lastElement ?? header ?? target)?.getBoundingClientRect()
-        .bottom ?? top;
+      const bottom =
+        (lastElement ?? header ?? target)?.getBoundingClientRect().bottom ??
+        top;
       after = event.clientY > (top + bottom) / 2;
     }
     if (!group) {
@@ -1292,7 +1298,10 @@ function App() {
           x: event.clientX,
           y: event.clientY,
           actions: [
-            { label: "New session", run: () => setDraft(blankProfile()) },
+            {
+              label: "New session",
+              run: () => setDraft(blankProfile(prefs.local_shell)),
+            },
             { label: "Settings", run: openAppearance },
           ],
         });
@@ -1316,7 +1325,7 @@ function App() {
           <div className="new-row">
             <button
               className="new-session"
-              onClick={() => setDraft(blankProfile())}
+              onClick={() => setDraft(blankProfile(prefs.local_shell))}
             >
               <Plus size={16} />
               New session
@@ -2301,7 +2310,7 @@ function App() {
                   ) : (
                     <button
                       className="primary"
-                      onClick={() => setDraft(blankProfile())}
+                      onClick={() => setDraft(blankProfile(prefs.local_shell))}
                     >
                       <Plus size={14} />
                       New session
@@ -2551,6 +2560,18 @@ function App() {
           lives={lives}
           profiles={prefs.profiles}
           onClose={() => setDispatchOpen(false)}
+        />
+      )}
+      {update && (
+        <UpdateNotice
+          status={update}
+          onClose={() => setUpdate(null)}
+          onNever={() => {
+            setUpdate(null);
+            void invoke<Preferences>("set_update_check", { enabled: false })
+              .then(setPrefs)
+              .catch(error);
+          }}
         />
       )}
       {settings && (
@@ -2830,25 +2851,14 @@ function ProfileEditor({
             {p.protocol === "Local" && (
               <label>
                 Shell
-                <select
+                <LocalShellSelect
                   value={p.local?.shell ?? "PowerShell"}
-                  onChange={(e) =>
+                  onChange={(shell) =>
                     change({
-                      local: {
-                        directory: p.local?.directory ?? "",
-                        shell: e.target.value as LocalShell,
-                      },
+                      local: { directory: p.local?.directory ?? "", shell },
                     })
                   }
-                >
-                  {(
-                    ["PowerShell", "WindowsPowerShell", "Cmd"] as LocalShell[]
-                  ).map((v) => (
-                    <option key={v} value={v}>
-                      {localShellLabel(v)}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
             )}
             {p.protocol !== "Local" && (

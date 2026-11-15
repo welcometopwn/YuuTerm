@@ -248,6 +248,8 @@ pub(super) enum Action {
     },
     Delete {
         path: String,
+        #[serde(default)]
+        recursive: bool,
     },
     Permissions {
         path: String,
@@ -336,7 +338,7 @@ pub(super) async fn file_action(
         Action::Resolve { path } => FileAction::Resolve { path },
         Action::Properties { path } => FileAction::Properties { path },
         Action::Rename { path, name } => FileAction::Rename { path, name },
-        Action::Delete { path } => FileAction::Delete { path },
+        Action::Delete { path, recursive } => FileAction::Delete { path, recursive },
         Action::Permissions {
             path,
             mode,

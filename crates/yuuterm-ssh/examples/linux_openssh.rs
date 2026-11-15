@@ -128,7 +128,7 @@ async fn main() -> Result<()> {
         live.send(Command::Input(format!("printf 'YT_MODE_%s\\n' $(stat -c %a \"{renamed}\")\r").into_bytes())).map_err(anyhow::Error::msg)?;
         wait(&live, |_|text(&live).contains("YT_MODE_640")).await?;
         checks.push("Rename keeps apostrophe/Unicode; POSIX mode 0640 is reported by SFTP and stat on the server".into());
-        files.execute(FileAction::Delete{path:renamed},cancel.clone()).await.map_err(anyhow::Error::msg)?;
+        files.execute(FileAction::Delete{path:renamed,recursive:false},cancel.clone()).await.map_err(anyhow::Error::msg)?;
         checks.push("SFTP deletes the renamed file".into());
         let edit_path=format!("{remote}/editor.txt");
         files.execute(FileAction::Upload{path:edit_path.clone(),local:unicode.clone()},cancel.clone()).await.map_err(anyhow::Error::msg)?;

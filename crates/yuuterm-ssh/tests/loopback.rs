@@ -617,11 +617,35 @@ async fn sftp_file_actions_transfer_conflict_and_reconnect_boundaries() {
         assert_eq!(mode("/fixture/tree/sub/b.txt") & 0o7777, 0o750);
         assert_eq!(mode("/fixture/tree/link"), 0o120777);
     }
-    fixture
-        .files
-        .lock()
-        .unwrap()
-        .retain(|path, _| !path.starts_with("/fixture/tree"));
+    assert!(
+        operation(
+            &files,
+            A::Delete {
+                path: "/fixture/tree".into(),
+                recursive: false
+            }
+        )
+        .await
+        .is_err()
+    );
+    let removed = operation(
+        &files,
+        A::Delete {
+            path: "/fixture/tree".into(),
+            recursive: true,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(removed.changed, 5);
+    assert!(
+        !fixture
+            .files
+            .lock()
+            .unwrap()
+            .keys()
+            .any(|path| path.starts_with("/fixture/tree"))
+    );
     let child = fixture.files.lock().unwrap()[&target].clone();
     fixture
         .files
@@ -632,7 +656,8 @@ async fn sftp_file_actions_transfer_conflict_and_reconnect_boundaries() {
         operation(
             &files,
             A::Delete {
-                path: "/fixture/logs".into()
+                path: "/fixture/logs".into(),
+                recursive: false
             }
         )
         .await
@@ -642,6 +667,7 @@ async fn sftp_file_actions_transfer_conflict_and_reconnect_boundaries() {
         &files,
         A::Delete {
             path: "/fixture/logs/child".into(),
+            recursive: false,
         },
     )
     .await
@@ -650,6 +676,7 @@ async fn sftp_file_actions_transfer_conflict_and_reconnect_boundaries() {
         &files,
         A::Delete {
             path: "/fixture/logs".into(),
+            recursive: false,
         },
     )
     .await
@@ -658,6 +685,7 @@ async fn sftp_file_actions_transfer_conflict_and_reconnect_boundaries() {
         &files,
         A::Delete {
             path: target.clone(),
+            recursive: false,
         },
     )
     .await
@@ -669,7 +697,8 @@ async fn sftp_file_actions_transfer_conflict_and_reconnect_boundaries() {
         operation(
             &files,
             A::Delete {
-                path: renamed.clone()
+                path: renamed.clone(),
+                recursive: false
             }
         )
         .await
@@ -712,7 +741,8 @@ async fn sftp_file_actions_transfer_conflict_and_reconnect_boundaries() {
         files
             .execute(
                 A::Delete {
-                    path: renamed.clone()
+                    path: renamed.clone(),
+                    recursive: false
                 },
                 cancelled
             )
@@ -1148,6 +1178,7 @@ async fn sftp_symlink_open_uses_target_without_replacing_link() {
         .execute(
             A::Delete {
                 path: "/fixture/new file.txt".into(),
+                recursive: false,
             },
             CancellationToken::new(),
         )
@@ -1271,6 +1302,7 @@ async fn sftp_symlink_open_uses_target_without_replacing_link() {
         .execute(
             A::Delete {
                 path: "/fixture/renamed-link".into(),
+                recursive: false,
             },
             CancellationToken::new(),
         )
