@@ -34,27 +34,26 @@ export function Appearance({
   const saving = useRef(false);
   const [problem, setProblem] = useState("");
   const [confirmReset, setConfirmReset] = useState(false);
-  const [checking, setChecking] = useState(false);
-  const [updateText, setUpdateText] = useState("");
-  const [updateFound, setUpdateFound] = useState(false);
-  const checkUpdate = async () => {
-    setChecking(true);
-    setUpdateFound(false);
-    setUpdateText("");
-    try {
-      const s = await invoke<UpdateStatus>("check_for_update");
-      setUpdateFound(s.available);
-      setUpdateText(
-        s.available
-          ? `YuuTerm ${s.latest} is available.`
-          : "You have the latest version.",
-      );
-    } catch (e) {
-      setUpdateText(String(e));
-    } finally {
-      setChecking(false);
-    }
-  };
+  const [update, setUpdate] = useState<
+    | { status: "checking" }
+    | { status: "latest" }
+    | { status: "available"; latest: string }
+    | { status: "error"; message: string }
+    | null
+  >(null);
+  useEffect(() => {
+    if (tab !== "about" || update) return;
+    setUpdate({ status: "checking" });
+    invoke<UpdateStatus>("check_for_update")
+      .then((s) =>
+        setUpdate(
+          s.available
+            ? { status: "available", latest: s.latest }
+            : { status: "latest" },
+        ),
+      )
+      .catch((e) => setUpdate({ status: "error", message: String(e) }));
+  }, [tab, update]);
   useEffect(() => onPreview(draft), [draft, onPreview]);
   const updateHighlight = (patch: Partial<Preferences["highlighting"]>) =>
     setDraft((p) => ({ ...p, highlighting: { ...p.highlighting, ...patch } }));
@@ -272,10 +271,6 @@ export function Appearance({
             />
             Check for updates at startup
           </label>
-          <p className="muted">
-            Asks GitHub once per start whether a newer release exists. Nothing
-            is downloaded or installed.
-          </p>
         </div>
         <div
           role="tabpanel"
@@ -476,32 +471,41 @@ export function Appearance({
           </p>
           <dl>
             <dt>Version</dt>
-            <dd>{__YUUTERM_VERSION__}</dd>
+            <dd>
+              {__YUUTERM_VERSION__}{" "}
+              <span role="status">
+                {!update
+                  ? ""
+                  : update.status === "checking"
+                    ? "(checking for new updates…)"
+                    : update.status === "latest"
+                      ? "(no new updates)"
+                      : update.status === "available"
+                        ? `(new release ${update.latest} available)`
+                        : `(update check failed: ${update.message})`}
+              </span>
+              {update?.status === "available" && (
+                <>
+                  {" "}
+                  <button
+                    className="link-button"
+                    onClick={() =>
+                      void invoke("open_release_page").catch((e) =>
+                        setProblem(String(e)),
+                      )
+                    }
+                  >
+                    Open download page
+                  </button>
+                </>
+              )}
+            </dd>
             <dt>Build</dt>
             <dd>{__YUUTERM_BUILD__}</dd>
             <dt>License</dt>
             <dd>MIT</dd>
             <dt>Copyright</dt>
             <dd>© 2026 welcometopwn</dd>
-            <dt>Updates</dt>
-            <dd>
-              <button disabled={checking} onClick={() => void checkUpdate()}>
-                {checking ? "Checking…" : "Check for updates"}
-              </button>{" "}
-              <span role="status">{updateText}</span>{" "}
-              {updateFound && (
-                <button
-                  className="link-button"
-                  onClick={() =>
-                    void invoke("open_release_page").catch((e) =>
-                      setProblem(String(e)),
-                    )
-                  }
-                >
-                  Open download page
-                </button>
-              )}
-            </dd>
             <dt>Project</dt>
             <dd>
               <button
