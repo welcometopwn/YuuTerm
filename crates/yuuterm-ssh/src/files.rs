@@ -24,6 +24,7 @@ pub const MAX_TREE_ENTRIES: usize = 10_000;
 pub const MAX_TREE_DEPTH: usize = 32;
 /// Aggregate filename bytes retained for one recursive directory listing.
 pub const MAX_TREE_NAME_BYTES: usize = 1024 * 1024;
+pub const NOT_EMPTY: &str = "Directory is not empty";
 const CHUNK: usize = 32768;
 
 #[derive(Debug)]
@@ -374,7 +375,10 @@ pub(crate) async fn execute(
                 return delete_tree(sftp, path).await;
             }
             if attrs.is_dir() {
-                sftp.rmdir(path).await?;
+                if let Err(error) = sftp.rmdir(path).await {
+                    ensure!(list(sftp, path).await?.is_empty(), NOT_EMPTY);
+                    return Err(error.into());
+                }
             } else {
                 sftp.remove(path).await?;
             }

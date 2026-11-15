@@ -626,7 +626,8 @@ async fn sftp_file_actions_transfer_conflict_and_reconnect_boundaries() {
             }
         )
         .await
-        .is_err()
+        .unwrap_err()
+        .contains("Directory is not empty")
     );
     let removed = operation(
         &files,
