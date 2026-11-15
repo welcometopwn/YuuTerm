@@ -1314,10 +1314,7 @@ export function Files({
           title="Delete selected items"
           onClose={busy ? undefined : () => setBulkDelete(null)}
         >
-          <p>
-            Permanently delete these {bulkDelete.length} items? Processing stops
-            on the first error.
-          </p>
+          <p>Permanently delete these {bulkDelete.length} items?</p>
           <ul className="bulk-items">
             {bulkDelete
               .filter((t) => selected.includes(t.entry.name))
