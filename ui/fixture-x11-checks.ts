@@ -22,7 +22,7 @@ export async function checkX11Settings(
   checks.push(
     "Registered native X11 command reports no installed VcXsrv/X410 without a mocked response",
   );
-  document.getElementById("session-tab-connection")!.click();
+  document.getElementById("session-tab-x11")!.click();
   const checkbox = () =>
     document.querySelector<HTMLInputElement>(
       'input[aria-label="Forward X11 applications"]',

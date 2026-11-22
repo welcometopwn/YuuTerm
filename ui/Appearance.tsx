@@ -11,6 +11,9 @@ import type { UpdateStatus } from "./UpdateNotice";
 import type { Preferences } from "./types";
 import { defaultHighlighting } from "./highlight-defaults";
 import { HighlightImport } from "./HighlightImport";
+import { CommandSettings } from "./CommandSettings";
+import { layoutProblems, layoutToSave, resolveLayout } from "./ssh-commands";
+import { WINDOWS_CATALOG } from "./windows-commands";
 
 export function Appearance({
   preferences,
@@ -30,6 +33,13 @@ export function Appearance({
     !terminalFontChoices.includes(preferences.font_family),
   );
   const [tab, setTab] = useState("appearance");
+  const [commands, setCommands] = useState(() =>
+    resolveLayout(preferences.ssh_commands),
+  );
+  const [rdpCommands, setRdpCommands] = useState(() =>
+    resolveLayout(preferences.rdp_commands, WINDOWS_CATALOG),
+  );
+  const [commandSet, setCommandSet] = useState<"ssh" | "rdp">("ssh");
   const [busy, setBusy] = useState(false);
   const saving = useRef(false);
   const [problem, setProblem] = useState("");
@@ -106,6 +116,8 @@ export function Appearance({
         );
     }
   });
+  issues.push(...layoutProblems(commands));
+  issues.push(...layoutProblems(rdpCommands).map((p) => `Remote tools: ${p}`));
   const save = async () => {
     if (saving.current || issues.length || !canSave) return;
     saving.current = true;
@@ -123,6 +135,8 @@ export function Appearance({
           statistics: draft.statistics,
           localShell: draft.local_shell ?? "PowerShell",
           updateCheck: draft.update_check ?? true,
+          sshCommands: layoutToSave(commands),
+          rdpCommands: layoutToSave(rdpCommands, WINDOWS_CATALOG),
         }),
       );
     } catch (e) {
@@ -133,11 +147,22 @@ export function Appearance({
     }
   };
   return (
-    <Modal title="Settings" onClose={busy ? undefined : onClose}>
+    <Modal
+      title="Settings"
+      className="settings-dialog"
+      onClose={busy ? undefined : onClose}
+    >
       <SettingsTabs
         prefix="settings"
         label="Settings sections"
-        tabs={["appearance", "general", "highlighting", "statistics", "about"]}
+        tabs={[
+          "appearance",
+          "general",
+          "highlighting",
+          "statistics",
+          "commands",
+          "about",
+        ]}
         value={tab}
         onChange={setTab}
       />
@@ -150,94 +175,100 @@ export function Appearance({
           aria-labelledby="settings-tab-appearance"
           hidden={tab !== "appearance"}
         >
-          <label>
-            Theme
-            <select
-              value={themeFor(draft.theme ?? "", draft.mocha).id}
-              onChange={(e) =>
-                setDraft((p) => ({
-                  ...p,
-                  theme: e.target.value,
-                  mocha: e.target.value === "catppuccin-mocha",
-                }))
-              }
-            >
-              {themes.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Terminal font
-            <select
-              aria-label="Terminal font"
-              value={custom ? "custom" : draft.font_family}
-              onChange={(e) => {
-                const selected = e.target.value;
-                setCustom(selected === "custom");
-                if (selected !== "custom")
-                  setDraft((p) => ({ ...p, font_family: selected }));
-              }}
-            >
-              {terminalFontChoices.map((name) => (
-                <option key={name} value={name}>
-                  {name === "YuuTerm JetBrains Mono"
-                    ? "JetBrains Mono Nerd Font (bundled)"
-                    : name}
-                </option>
-              ))}
-              <option value="custom">Other installed font</option>
-            </select>
-          </label>
-          {custom && (
+          <fieldset className="settings-card">
+            <legend>Theme and font</legend>
             <label>
-              Font family
-              <input
-                aria-label="Terminal font family"
-                value={draft.font_family}
-                maxLength={128}
+              Theme
+              <select
+                value={themeFor(draft.theme ?? "", draft.mocha).id}
                 onChange={(e) =>
-                  setDraft((p) => ({ ...p, font_family: e.target.value }))
+                  setDraft((p) => ({
+                    ...p,
+                    theme: e.target.value,
+                    mocha: e.target.value === "catppuccin-mocha",
+                  }))
+                }
+              >
+                {themes.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Terminal font
+              <select
+                aria-label="Terminal font"
+                value={custom ? "custom" : draft.font_family}
+                onChange={(e) => {
+                  const selected = e.target.value;
+                  setCustom(selected === "custom");
+                  if (selected !== "custom")
+                    setDraft((p) => ({ ...p, font_family: selected }));
+                }}
+              >
+                {terminalFontChoices.map((name) => (
+                  <option key={name} value={name}>
+                    {name === "YuuTerm JetBrains Mono"
+                      ? "JetBrains Mono Nerd Font (bundled)"
+                      : name}
+                  </option>
+                ))}
+                <option value="custom">Other installed font</option>
+              </select>
+            </label>
+            {custom && (
+              <label>
+                Font family
+                <input
+                  aria-label="Terminal font family"
+                  value={draft.font_family}
+                  maxLength={128}
+                  onChange={(e) =>
+                    setDraft((p) => ({ ...p, font_family: e.target.value }))
+                  }
+                />
+              </label>
+            )}
+          </fieldset>
+          <fieldset className="settings-card">
+            <legend>Terminal</legend>
+            <label>
+              Default terminal font size
+              <input
+                aria-label="Default terminal font size"
+                type="number"
+                min={8}
+                max={32}
+                value={draft.font_size}
+                onChange={(e) =>
+                  setDraft((p) => ({ ...p, font_size: Number(e.target.value) }))
                 }
               />
             </label>
-          )}
-          <label>
-            Default terminal font size
-            <input
-              aria-label="Default terminal font size"
-              type="number"
-              min={8}
-              max={32}
-              value={draft.font_size}
-              onChange={(e) =>
-                setDraft((p) => ({ ...p, font_size: Number(e.target.value) }))
-              }
-            />
-          </label>
-          <label>
-            Terminal history (lines)
-            <input
-              aria-label="Terminal history lines"
-              type="number"
-              min={0}
-              max={10000}
-              step={100}
-              value={draft.scrollback_lines}
-              onChange={(e) =>
-                setDraft((p) => ({
-                  ...p,
-                  scrollback_lines: Number(e.target.value),
-                }))
-              }
-            />
-          </label>
-          <p className="muted">
-            Applies after Save to all terminals. Reducing the limit discards
-            older output. Zero keeps only the screen.
-          </p>
+            <label>
+              Terminal history (lines)
+              <input
+                aria-label="Terminal history lines"
+                type="number"
+                min={0}
+                max={10000}
+                step={100}
+                value={draft.scrollback_lines}
+                onChange={(e) =>
+                  setDraft((p) => ({
+                    ...p,
+                    scrollback_lines: Number(e.target.value),
+                  }))
+                }
+              />
+            </label>
+            <p className="muted">
+              Applies after Save to all terminals. Reducing the limit discards
+              older output. Zero keeps only the screen.
+            </p>
+          </fieldset>
         </div>
         <div
           role="tabpanel"
@@ -245,32 +276,38 @@ export function Appearance({
           aria-labelledby="settings-tab-general"
           hidden={tab !== "general"}
         >
-          <label>
-            Local terminal shell
-            <LocalShellSelect
-              label="Local terminal shell"
-              value={draft.local_shell ?? "PowerShell"}
-              onChange={(local_shell) =>
-                setDraft((p) => ({ ...p, local_shell }))
-              }
-            />
-          </label>
-          <p className="muted">
-            Used by the Local terminal button and for new local sessions. Each
-            local session can choose its own shell. Shells that are not
-            installed are greyed out.
-          </p>
-          <label className="check-label">
-            <input
-              type="checkbox"
-              aria-label="Check for updates at startup"
-              checked={draft.update_check ?? true}
-              onChange={(e) =>
-                setDraft((p) => ({ ...p, update_check: e.target.checked }))
-              }
-            />
-            Check for updates at startup
-          </label>
+          <fieldset className="settings-card">
+            <legend>Local terminal</legend>
+            <label>
+              Local terminal shell
+              <LocalShellSelect
+                label="Local terminal shell"
+                value={draft.local_shell ?? "PowerShell"}
+                onChange={(local_shell) =>
+                  setDraft((p) => ({ ...p, local_shell }))
+                }
+              />
+            </label>
+            <p className="muted">
+              Used by the Local terminal button and for new local sessions. Each
+              local session can choose its own shell. Shells that are not
+              installed are greyed out.
+            </p>
+          </fieldset>
+          <fieldset className="settings-card">
+            <legend>Updates</legend>
+            <label className="check-label">
+              <input
+                type="checkbox"
+                aria-label="Check for updates at startup"
+                checked={draft.update_check ?? true}
+                onChange={(e) =>
+                  setDraft((p) => ({ ...p, update_check: e.target.checked }))
+                }
+              />
+              Check for updates at startup
+            </label>
+          </fieldset>
         </div>
         <div
           role="tabpanel"
@@ -278,7 +315,7 @@ export function Appearance({
           aria-labelledby="settings-tab-highlighting"
           hidden={tab !== "highlighting"}
         >
-          <fieldset className="highlight-settings">
+          <fieldset className="highlight-settings settings-card wide">
             <legend>Terminal highlighting</legend>
             <label className="check-label">
               <input
@@ -416,7 +453,7 @@ export function Appearance({
           aria-labelledby="settings-tab-statistics"
           hidden={tab !== "statistics"}
         >
-          <fieldset className="statistics-settings">
+          <fieldset className="statistics-settings settings-card">
             <legend>Host statistics</legend>
             <label className="check-label">
               <input
@@ -457,6 +494,41 @@ export function Appearance({
               </select>
             </label>
           </fieldset>
+        </div>
+        <div
+          role="tabpanel"
+          id="settings-panel-commands"
+          aria-labelledby="settings-tab-commands"
+          hidden={tab !== "commands"}
+        >
+          <div className="ssh-actions command-set" role="radiogroup">
+            {(
+              [
+                ["ssh", "SSH tools"],
+                ["rdp", "RDP remote tools (Windows)"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                role="radio"
+                aria-checked={commandSet === value}
+                className={commandSet === value ? "active" : ""}
+                onClick={() => setCommandSet(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {commandSet === "ssh" ? (
+            <CommandSettings layout={commands} onChange={setCommands} />
+          ) : (
+            <CommandSettings
+              key="rdp"
+              layout={rdpCommands}
+              onChange={setRdpCommands}
+              catalog={WINDOWS_CATALOG}
+            />
+          )}
         </div>
         <div
           role="tabpanel"

@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('all', 'session', 'files', 'file-navigation', 'editor', 'recovery', 'filemenus', 'history', 'logging', 'transfer', 'pollwait', 'icons', 'about', 'qol', 'clipboard')]
+    [ValidateSet('all', 'session', 'files', 'file-navigation', 'editor', 'recovery', 'filemenus', 'history', 'logging', 'transfer', 'pollwait', 'icons', 'about', 'commands', 'settings-layout', 'session-layout', 'popout', 'qol', 'clipboard')]
     [string]$Scope = 'logging',
     [switch]$SkipBuild,
     [switch]$MobaImport,

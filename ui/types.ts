@@ -31,7 +31,10 @@ export interface Profile {
   port: number;
   username: string;
   font_size: number | null;
+  font_family?: string | null;
+  font_color?: string | null;
   statistics_enabled: boolean | null;
+  statistics_hidden?: StatisticsItem[];
   logging: {
     enabled: boolean;
     file: string;
@@ -51,6 +54,8 @@ export interface Profile {
     clipboard: boolean;
     audio: "Local" | "Remote" | "Off";
     keyboard?: "Remote" | "Local";
+    tools_sign_in?: RdpToolsSignIn;
+    tools_key_file?: string;
   };
   local?: { shell: LocalShell; directory: string };
   vnc?: { auth: "Plain" | "Vnc"; clipboard?: boolean; resize_server?: boolean };
@@ -94,6 +99,18 @@ export interface Preferences {
   statistics: StatisticsSettings;
   local_shell?: LocalShell;
   update_check?: boolean;
+  /** SSH tools layout; absent or empty keeps the built-in order. */
+  ssh_commands?: CommandCategory[];
+  rdp_commands?: CommandCategory[];
+}
+export type CommandMode = "run" | "confirm" | "insert";
+export type CommandItem =
+  | { kind: "builtin"; id: string }
+  | { kind: "custom"; label: string; command: string; mode: CommandMode };
+export interface CommandCategory {
+  name: string;
+  hidden?: boolean;
+  items: CommandItem[];
 }
 export interface StatisticsSettings {
   enabled: boolean;
@@ -159,6 +176,8 @@ export interface Poll {
   chunks: number[][];
   more: boolean;
   logging: OutputLogStatus | null;
+  /** The terminal output goes to an own window. */
+  popped?: boolean;
 }
 export interface OutputLogStatus {
   durable_bytes?: number;
@@ -168,10 +187,23 @@ export interface OutputLogStatus {
   error: string | null;
   path: string | null;
 }
+export const statisticsItems = [
+  ["Host", "Host name"],
+  ["Cpu", "CPU"],
+  ["Memory", "RAM"],
+  ["Network", "Upload and download"],
+  ["Uptime", "Uptime"],
+  ["Disk", "Disk"],
+  ["Latency", "Latency"],
+] as const;
+export type StatisticsItem = (typeof statisticsItems)[number][0];
+export type RdpToolsSignIn = "Password" | "Agent" | "KeyFile";
 export const rdpSettings = (p: Profile) => ({
   clipboard: true,
   audio: "Off" as "Local" | "Remote" | "Off",
   keyboard: "Remote" as "Remote" | "Local",
+  tools_sign_in: "Password" as RdpToolsSignIn,
+  tools_key_file: "",
   ...p.rdp,
 });
 // Protocols with an integrated session adapter.

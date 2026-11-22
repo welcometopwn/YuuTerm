@@ -38,7 +38,7 @@ export function RdpCertificate({
         {remembered === null
           ? "checking…"
           : remembered
-            ? "remembered — connects without the prompt while it stays the same"
+            ? "remembered"
             : viaGateway
               ? 'asks on every connection — choose "Remember and connect" in the native prompt'
               : 'asks on every connection — tick "Don\'t ask me again" in the prompt to remember it'}

@@ -138,6 +138,15 @@ export async function checkSshTools(ids: number[], checks: string[]) {
     note("Commands for tools missing on the host are disabled with a reason");
   }
 
+  const pve = document.querySelectorAll('[data-command^="pve-"]').length;
+  if (probe.tools.includes("pveversion") ? !pve : pve)
+    throw Error("Proxmox commands do not follow detection");
+  note(
+    probe.tools.includes("pveversion")
+      ? "Proxmox commands are listed on a detected Proxmox VE host"
+      : "Proxmox commands stay hidden on a host without Proxmox VE",
+  );
+
   // A plain command is typed into this session only, followed by Enter.
   const before = (await trace()).length;
   command("memory")!.click();

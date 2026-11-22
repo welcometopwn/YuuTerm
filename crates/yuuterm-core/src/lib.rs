@@ -74,8 +74,14 @@ pub struct Profile {
     pub port: u16,
     pub username: String,
     pub font_size: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_family: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_color: Option<String>,
     #[serde(default)]
     pub statistics_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub statistics_hidden: Vec<StatisticsItem>,
     #[serde(default)]
     pub logging: LoggingSettings,
     #[serde(default)]
@@ -128,6 +134,9 @@ pub struct RdpSettings {
     pub clipboard: bool,
     pub audio: RdpAudio,
     pub keyboard: RdpKeyboard,
+    /// How the remote tools (an SSH session to the same host) sign in.
+    pub tools_sign_in: RdpToolsSignIn,
+    pub tools_key_file: String,
 }
 impl Default for RdpSettings {
     fn default() -> Self {
@@ -135,8 +144,31 @@ impl Default for RdpSettings {
             clipboard: true,
             audio: RdpAudio::default(),
             keyboard: RdpKeyboard::default(),
+            tools_sign_in: RdpToolsSignIn::default(),
+            tools_key_file: String::new(),
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StatisticsItem {
+    Host,
+    Cpu,
+    Memory,
+    Network,
+    Uptime,
+    Disk,
+    Latency,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RdpToolsSignIn {
+    /// The account's password (saved for the RDP bookmark or prompted).
+    #[default]
+    Password,
+    /// A key held by the Windows OpenSSH agent; no password prompt.
+    Agent,
+    KeyFile,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -314,6 +346,8 @@ pub struct SshSettings {
     pub config_host: String,
     pub config_file: String,
     pub key_file: String,
+    #[serde(skip)]
+    pub remote_command: Option<&'static str>,
 }
 
 impl Default for SshSettings {
@@ -326,6 +360,7 @@ impl Default for SshSettings {
             config_host: String::new(),
             config_file: String::new(),
             key_file: String::new(),
+            remote_command: None,
         }
     }
 }
@@ -344,7 +379,10 @@ impl Default for Profile {
             port: 22,
             username: String::new(),
             font_size: None,
+            font_family: None,
+            font_color: None,
             statistics_enabled: None,
+            statistics_hidden: Vec::new(),
             logging: LoggingSettings::default(),
             ssh: SshSettings::default(),
             telnet: TelnetSettings::default(),
@@ -371,6 +409,7 @@ impl Profile {
         for value in [
             &self.ssh.agent_pipe,
             &self.ssh.key_file,
+            &self.rdp.tools_key_file,
             &self.ssh.identity_fingerprint,
             &self.ssh.config_host,
             &self.ssh.config_file,
@@ -452,6 +491,23 @@ impl Profile {
             .is_some_and(|s| !s.is_finite() || !(8.0..=32.0).contains(&s))
         {
             return Err("Font size must be between 8 and 32.");
+        }
+        if self
+            .font_family
+            .as_deref()
+            .is_some_and(|f| !config::validate_terminal_font(f))
+        {
+            return Err("Invalid terminal font family.");
+        }
+        if self.font_color.as_deref().is_some_and(|c| {
+            c.len() != 7
+                || !c.starts_with('#')
+                || !c.as_bytes()[1..].iter().all(u8::is_ascii_hexdigit)
+        }) {
+            return Err("Text color must be #RRGGBB.");
+        }
+        if self.statistics_hidden.len() > 16 {
+            return Err("Too many hidden statistics.");
         }
         validate_gateways(self)
     }
@@ -536,6 +592,41 @@ impl BroadcastTargets {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rdp_tools_sign_in_defaults_to_password_for_older_bookmarks() {
+        let old: RdpSettings = serde_json::from_str(r#"{"clipboard":false}"#).unwrap();
+        assert_eq!(old.tools_sign_in, RdpToolsSignIn::Password);
+        assert!(!old.clipboard);
+        let agent: RdpSettings = serde_json::from_str(r#"{"tools_sign_in":"Agent"}"#).unwrap();
+        assert_eq!(agent.tools_sign_in, RdpToolsSignIn::Agent);
+        let key: RdpSettings =
+            serde_json::from_str(r#"{"tools_sign_in":"KeyFile","tools_key_file":"C:/k"}"#).unwrap();
+        assert_eq!(key.tools_sign_in, RdpToolsSignIn::KeyFile);
+        assert_eq!(key.tools_key_file, "C:/k");
+        assert!(serde_json::from_str::<RdpSettings>(r#"{"tools_sign_in":"Key"}"#).is_err());
+    }
+
+    #[test]
+    fn terminal_overrides_and_hidden_statistics_are_validated() {
+        let mut p = profile();
+        p.font_family = Some("Consolas".into());
+        p.font_color = Some("#a6e3a1".into());
+        p.statistics_hidden = vec![StatisticsItem::Cpu, StatisticsItem::Network];
+        p.validate().unwrap();
+        let json = serde_json::to_string(&p).unwrap();
+        let back: Profile = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.statistics_hidden, p.statistics_hidden);
+        assert_eq!(back.font_color.as_deref(), Some("#a6e3a1"));
+        p.font_color = Some("red".into());
+        assert!(p.validate().is_err());
+        p.font_color = None;
+        p.font_family = Some("x; url(a)".into());
+        assert!(p.validate().is_err());
+        let old = profile();
+        let json = serde_json::to_string(&old).unwrap();
+        assert!(!json.contains("font_family") && !json.contains("statistics_hidden"));
+    }
 
     fn profile() -> Profile {
         Profile {

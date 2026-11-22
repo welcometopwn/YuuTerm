@@ -98,6 +98,11 @@ impl Target {
                 yuuterm_core::vnc::VncAuth::Vnc => b"/vnc/password",
             });
         }
+        if profile.protocol == yuuterm_core::Protocol::Ssh
+            && profile.ssh.auth == yuuterm_core::SshAuth::KeyFile
+        {
+            metadata.extend_from_slice(b"/ssh/key-passphrase");
+        }
         Ok(Self(format!(
             "YuuTerm/password/v1/{}",
             yuuterm_ssh::hex::lower(Sha256::digest(metadata))

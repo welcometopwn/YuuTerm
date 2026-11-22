@@ -47,6 +47,7 @@ export async function checkAbout(
     "general",
     "highlighting",
     "statistics",
+    "commands",
     "about",
   ]) {
     document.getElementById(`settings-tab-${name}`)!.click();
@@ -71,7 +72,7 @@ export async function checkAbout(
     return (
       !!panel &&
       !panel.hidden &&
-      values[0] === version &&
+      !!values[0]?.startsWith(version) &&
       values[1] === dev &&
       values[2] === "MIT"
     );

@@ -4,6 +4,15 @@ import {
   COMMANDS,
   asRoot,
   rootShell,
+  shown,
+  defaultLayout,
+  resolveLayout,
+  layoutToSave,
+  layoutProblems,
+  panelCommands,
+  isBuiltinCategory,
+  moveCommand,
+  moveTo,
   childPath,
   commandText,
   formatKib,
@@ -34,8 +43,12 @@ test("every state-changing command is marked for confirmation", () => {
     "docker-prune",
     "upgrade",
     "full-upgrade",
+    "autoremove",
     "reboot",
     "poweroff",
+    "pve-vm-control",
+    "pve-ct-control",
+    "pve-backup",
   ])
     assert.ok(risky.includes(id), id);
   assert.equal(new Set(COMMANDS.map((c) => c.id)).size, COMMANDS.length);
@@ -96,19 +109,27 @@ test("commands follow the detected host", () => {
   );
   assert.equal(
     commandText(command("upgrade"), { probe: probe(["apt"]) }),
-    "sudo apt update && sudo apt upgrade",
+    "sudo apt update && sudo apt upgrade -y",
   );
   assert.equal(
     commandText(command("upgrade"), { probe: probe(["dnf"], 0) }),
-    "dnf upgrade",
+    "dnf upgrade -y",
   );
   assert.equal(
     commandText(command("full-upgrade"), { probe: probe(["apt"]) }),
-    "sudo apt update && sudo apt full-upgrade",
+    "sudo apt update && sudo apt full-upgrade -y",
+  );
+  assert.equal(
+    commandText(command("autoremove"), { probe: probe(["apt"]) }),
+    "sudo apt autoremove -y",
+  );
+  assert.equal(
+    commandText(command("autoremove"), { probe: probe(["dnf"], 0) }),
+    "dnf autoremove -y",
   );
   assert.equal(
     commandText(command("full-upgrade"), { probe: probe(["apt"], 0) }),
-    "apt update && apt full-upgrade",
+    "apt update && apt full-upgrade -y",
   );
   assert.equal(
     commandText(command("service-control"), {
@@ -203,4 +224,186 @@ test("search, sizes and path helpers", () => {
   assert.equal(parentPath("/var/log"), "/var");
   assert.equal(parentPath("/var"), "/");
   assert.equal(parentPath("/"), "/");
+});
+
+test("Proxmox commands appear only on a detected Proxmox host", () => {
+  const pve = COMMANDS.filter((c) => c.category === "Proxmox");
+  assert.ok(pve.length > 0);
+  for (const c of pve) {
+    assert.equal(shown(c), false, c.id);
+    assert.equal(shown(c, probe(["apt", "qm"])), false, c.id);
+    assert.equal(shown(c, probe(["pveversion"])), true, c.id);
+  }
+  assert.ok(shown(command("memory")));
+  assert.equal(validate("vmid", "100"), null);
+  assert.equal(validate("vmid", "999999999"), null);
+  for (const bad of ["99", "0100", "1e3", "100 --purge", "-100", ""])
+    assert.notEqual(validate("vmid", bad), null, bad);
+  const pveProbe = probe(["pveversion"]);
+  assert.equal(
+    commandText(command("pve-vm-control"), {
+      probe: pveProbe,
+      value: "101",
+      action: "shutdown",
+    }),
+    "sudo qm shutdown 101",
+  );
+  assert.equal(
+    commandText(command("pve-ct-control"), {
+      probe: probe(["pveversion"], 0),
+      value: "200",
+      action: "rm",
+    }),
+    "pct start 200",
+  );
+  assert.equal(
+    commandText(command("pve-backup"), { probe: pveProbe, value: "101" }),
+    "sudo vzdump 101 --mode snapshot",
+  );
+  assert.equal(
+    commandText(command("pve-version"), { probe: pveProbe }),
+    "pveversion -v",
+  );
+});
+
+test("saved layouts keep their order and still gain new built-in commands", () => {
+  const defaults = defaultLayout();
+  assert.deepEqual(resolveLayout(), defaults);
+  assert.deepEqual(resolveLayout([]), defaults);
+  assert.deepEqual(layoutToSave(defaults), []);
+
+  const resolved = resolveLayout([
+    {
+      name: "Deploy",
+      items: [
+        { kind: "custom", label: "Pull", command: "git pull", mode: "run" },
+      ],
+    },
+    {
+      name: "Docker",
+      hidden: true,
+      items: [
+        {
+          kind: "custom",
+          label: "Up",
+          command: "docker compose up -d",
+          mode: "confirm",
+        },
+        { kind: "builtin", id: "docker-logs" },
+        { kind: "builtin", id: "docker-logs" },
+        { kind: "builtin", id: "removed-in-this-version" },
+      ],
+    },
+  ]);
+  assert.deepEqual(resolved.map((c) => c.name).slice(0, 2), [
+    "Deploy",
+    "Docker",
+  ]);
+  const docker = resolved[1].items.map((i) =>
+    i.kind === "builtin" ? i.id : i.label,
+  );
+  assert.deepEqual(docker.slice(0, 2), ["Up", "docker-logs"]);
+  assert.equal(docker.filter((id) => id === "docker-logs").length, 1);
+  assert.ok(!docker.includes("removed-in-this-version"));
+  assert.ok(
+    docker.includes("docker-ps"),
+    "missing built-ins rejoin their category",
+  );
+  const ids = resolved.flatMap((c) =>
+    c.items.flatMap((i) => (i.kind === "builtin" ? [i.id] : [])),
+  );
+  assert.equal(new Set(ids).size, COMMANDS.length);
+
+  const panel = panelCommands([...resolved]);
+  assert.ok(!panel.some((c) => c.name === "Docker"), "hidden category");
+  const pull = panel[0].commands[0];
+  assert.equal(commandText(pull, {}), "git pull");
+  assert.ok(pull.custom && !pull.danger && !pull.insert);
+  const saved = layoutToSave(resolved);
+  assert.equal(saved[1].hidden, true);
+  assert.equal(layoutToSave(resolveLayout(saved)).length, saved.length);
+});
+
+test("custom command modes and layout problems", () => {
+  const layout = (
+    command: string,
+    mode: "run" | "confirm" | "insert" = "run",
+  ) => [
+    {
+      name: "Mine",
+      items: [{ kind: "custom" as const, label: "Go", command, mode }],
+    },
+  ];
+  const first = (mode: "run" | "confirm" | "insert") =>
+    panelCommands(layout("ls -la", mode))[0].commands[0];
+  assert.ok(first("confirm").danger);
+  assert.ok(first("insert").insert && !first("insert").danger);
+  assert.deepEqual(layoutProblems(layout("uptime")), []);
+  for (const bad of [
+    "",
+    "   ",
+    "uptime\nreboot",
+    "a\rb",
+    "printf '\u001b'",
+    "x\u0085",
+  ])
+    assert.equal(layoutProblems(layout(bad)).length, 1, JSON.stringify(bad));
+  assert.equal(layoutProblems(layout("x".repeat(4097))).length, 1);
+  assert.equal(
+    layoutProblems([...layout("a"), { name: "mine ", items: [] }]).length,
+    1,
+  );
+  assert.equal(layoutProblems([{ name: " ", items: [] }]).length, 1);
+  assert.ok(isBuiltinCategory("Docker") && !isBuiltinCategory("Mine"));
+});
+
+test("drag and drop keeps built-in commands in their category", () => {
+  assert.deepEqual(moveTo(["a", "b", "c"], 0, 2), ["b", "a", "c"]);
+  assert.deepEqual(moveTo(["a", "b", "c"], 0, 3), ["b", "c", "a"]);
+  assert.deepEqual(moveTo(["a", "b", "c"], 2, 0), ["c", "a", "b"]);
+  assert.deepEqual(moveTo(["a", "b", "c"], 1, 2), ["a", "b", "c"]);
+  const layout = [
+    {
+      name: "Mine",
+      items: [
+        {
+          kind: "custom" as const,
+          label: "Go",
+          command: "go",
+          mode: "run" as const,
+        },
+      ],
+    },
+    {
+      name: "Docker",
+      items: [
+        { kind: "builtin" as const, id: "docker-ps" },
+        { kind: "builtin" as const, id: "docker-stats" },
+      ],
+    },
+  ];
+  const moved = moveCommand(
+    layout,
+    { category: 0, index: 0 },
+    { category: 1, index: 1 },
+  );
+  assert.equal(moved[0].items.length, 0);
+  assert.deepEqual(
+    moved[1].items.map((i) => (i.kind === "builtin" ? i.id : i.label)),
+    ["docker-ps", "Go", "docker-stats"],
+  );
+  assert.equal(
+    moveCommand(layout, { category: 1, index: 0 }, { category: 0, index: 0 }),
+    layout,
+    "built-in commands cannot leave their category",
+  );
+  const within = moveCommand(
+    layout,
+    { category: 1, index: 0 },
+    { category: 1, index: 2 },
+  );
+  assert.deepEqual(
+    within[1].items.map((i) => (i.kind === "builtin" ? i.id : "")),
+    ["docker-stats", "docker-ps"],
+  );
 });

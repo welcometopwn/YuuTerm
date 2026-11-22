@@ -3,6 +3,8 @@
 // front of the user. Inputs are validated strictly instead of relying on
 // shell-specific quoting; the text works in sh, bash, zsh and fish.
 
+import type { CommandCategory, CommandItem } from "./types";
+
 export type Probe = {
   os: string;
   shell: string;
@@ -12,7 +14,15 @@ export type Probe = {
   groups: string[];
 };
 
-export type Param = "pid" | "unit" | "container" | "host" | "path";
+export type Param =
+  | "pid"
+  | "unit"
+  | "container"
+  | "host"
+  | "path"
+  | "vmid"
+  | "service"
+  | "session";
 
 export type Context = {
   /** Undefined when detection failed: every command stays enabled. */
@@ -30,8 +40,13 @@ export type SshCommand = {
   param?: Param;
   /** Choices shown beside the input, e.g. restart/stop/start. */
   actions?: { value: string; label: string }[];
+  /** User-defined in Settings; typed without Enter when `insert` is set. */
+  custom?: boolean;
+  insert?: boolean;
   /** Opens the storage view instead of typing a command. */
   storage?: boolean;
+  /** Shown only when the probe found this tool; hidden if detection failed. */
+  platform?: string;
   /** Reason the command cannot run on this host, or null. */
   unavailable?: (probe: Probe) => string | null;
   build: (context: Context) => string;
@@ -72,6 +87,9 @@ export const PARAM_LABELS: Record<Param, string> = {
   container: "Container name or ID",
   host: "Host name or IP address",
   path: "Absolute path",
+  vmid: "VM or container ID",
+  service: "Windows service name",
+  session: "Session ID (from Signed-in users)",
 };
 
 const PATTERNS: Record<Exclude<Param, "path">, RegExp> = {
@@ -79,6 +97,9 @@ const PATTERNS: Record<Exclude<Param, "path">, RegExp> = {
   unit: /^[A-Za-z0-9@_.:][A-Za-z0-9@_.:-]{0,255}$/,
   container: /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/,
   host: /^[A-Za-z0-9.:][A-Za-z0-9.:-]{0,252}$/,
+  vmid: /^[1-9][0-9]{2,8}$/,
+  service: /^[A-Za-z0-9_.@-][A-Za-z0-9 _.@-]{0,255}$/,
+  session: /^[0-9]{1,5}$/,
 };
 
 /** Returns a problem description, or null when the value is safe to type. */
@@ -334,8 +355,8 @@ export const COMMANDS: SshCommand[] = [
     unavailable: needsAny("apt", "dnf"),
     build: ({ probe }) =>
       has(probe, "apt")
-        ? `${sudo(probe)}apt update && ${sudo(probe)}apt upgrade`
-        : `${sudo(probe)}dnf upgrade`,
+        ? `${sudo(probe)}apt update && ${sudo(probe)}apt upgrade -y`
+        : `${sudo(probe)}dnf upgrade -y`,
   },
   {
     // Listed before Full upgrade so that lands under Install updates in two columns.
@@ -359,8 +380,18 @@ export const COMMANDS: SshCommand[] = [
     danger: true,
     unavailable: needs("apt"),
     build: ({ probe }) =>
-      `${sudo(probe)}apt update && ${sudo(probe)}apt full-upgrade`,
+      `${sudo(probe)}apt update && ${sudo(probe)}apt full-upgrade -y`,
   },
+  {
+    id: "autoremove",
+    category: "Packages",
+    label: "Remove unused packages",
+    danger: true,
+    unavailable: needsAny("apt", "dnf"),
+    build: ({ probe }) =>
+      `${sudo(probe)}${has(probe, "apt") ? "apt" : "dnf"} autoremove -y`,
+  },
+  ...proxmox(),
   {
     id: "reboot",
     category: "Power",
@@ -377,7 +408,94 @@ export const COMMANDS: SshCommand[] = [
   },
 ];
 
+function proxmox(): SshCommand[] {
+  const base = { category: "Proxmox", platform: "pveversion" };
+  const power = [
+    { value: "start", label: "Start" },
+    { value: "shutdown", label: "Shut down" },
+    { value: "reboot", label: "Reboot" },
+  ];
+  const plain = (id: string, label: string, command: string): SshCommand => ({
+    ...base,
+    id,
+    label,
+    build: ({ probe }) => `${sudo(probe)}${command}`,
+  });
+  return [
+    {
+      ...base,
+      id: "pve-version",
+      label: "Versions",
+      build: () => "pveversion -v",
+    },
+    plain("pve-vms", "Virtual machines", "qm list"),
+    plain("pve-cts", "Containers", "pct list"),
+    plain("pve-storage", "Storage", "pvesm status"),
+    plain("pve-cluster", "Cluster status", "pvecm status"),
+    plain("pve-ha", "HA status", "ha-manager status"),
+    {
+      ...base,
+      id: "pve-vm-config",
+      label: "VM config",
+      param: "vmid",
+      build: (c) => `${sudo(c.probe)}qm config ${value(c)}`,
+    },
+    {
+      ...base,
+      id: "pve-ct-config",
+      label: "Container config",
+      param: "vmid",
+      build: (c) => `${sudo(c.probe)}pct config ${value(c)}`,
+    },
+    {
+      ...base,
+      id: "pve-ct-enter",
+      label: "Enter container",
+      param: "vmid",
+      build: (c) => `${sudo(c.probe)}pct enter ${value(c)}`,
+    },
+    {
+      ...base,
+      id: "pve-vm-control",
+      label: "Control VM",
+      danger: true,
+      param: "vmid",
+      actions: power,
+      build: (c) => `${sudo(c.probe)}qm ${c.action ?? "start"} ${value(c)}`,
+    },
+    {
+      ...base,
+      id: "pve-ct-control",
+      label: "Control container",
+      danger: true,
+      param: "vmid",
+      actions: power,
+      build: (c) => `${sudo(c.probe)}pct ${c.action ?? "start"} ${value(c)}`,
+    },
+    {
+      ...base,
+      id: "pve-backup",
+      label: "Back up now",
+      danger: true,
+      param: "vmid",
+      build: (c) => `${sudo(c.probe)}vzdump ${value(c)} --mode snapshot`,
+    },
+  ];
+}
+
 export const CATEGORIES = [...new Set(COMMANDS.map((c) => c.category))];
+
+export type Catalog = {
+  commands: SshCommand[];
+  categories: string[];
+  description: string;
+};
+export const SSH_CATALOG: Catalog = {
+  commands: COMMANDS,
+  categories: CATEGORIES,
+  description:
+    "Commands for the SSH tools panel, used on every SSH host. Custom commands are typed exactly as entered; add sudo yourself where needed. Drag the grip to reorder.",
+};
 
 /**
  * Command that opens a root login shell in the terminal, or null when the
@@ -391,6 +509,190 @@ export function rootShell(probe?: Probe) {
 /** The probe as seen from a root shell opened with `rootShell`. */
 export function asRoot(probe?: Probe): Probe | undefined {
   return probe && { ...probe, uid: 0 };
+}
+
+/** The built-in categories and commands in their default order. */
+export function defaultLayout(catalog = SSH_CATALOG): CommandCategory[] {
+  return catalog.categories.map((name) => ({
+    name,
+    items: catalog.commands
+      .filter((c) => c.category === name)
+      .map((c) => ({
+        kind: "builtin" as const,
+        id: c.id,
+      })),
+  }));
+}
+
+/**
+ * The saved layout made complete: unknown or repeated built-in references are
+ * dropped, and built-in commands added by a later version join their default
+ * category (created at the end if the layout no longer has it).
+ */
+export function resolveLayout(
+  saved?: CommandCategory[],
+  catalog = SSH_CATALOG,
+): CommandCategory[] {
+  if (!saved?.length) return defaultLayout(catalog);
+  const known = new Set(catalog.commands.map((c) => c.id));
+  const seen = new Set<string>();
+  const layout = saved.map((category) => ({
+    ...category,
+    items: category.items.filter(
+      (item) =>
+        item.kind === "custom" ||
+        (known.has(item.id) && !seen.has(item.id) && !!seen.add(item.id)),
+    ),
+  }));
+  for (const command of catalog.commands) {
+    if (seen.has(command.id)) continue;
+    let category = layout.find((c) => c.name === command.category);
+    if (!category) {
+      category = { name: command.category, items: [] };
+      layout.push(category);
+    }
+    category.items.push({ kind: "builtin", id: command.id });
+  }
+  return layout;
+}
+
+/** Saved form: empty while the layout equals the built-in default. */
+export function layoutToSave(
+  layout: CommandCategory[],
+  catalog = SSH_CATALOG,
+): CommandCategory[] {
+  const clean = layout.map((c) => ({
+    name: c.name.trim(),
+    ...(c.hidden ? { hidden: true } : {}),
+    items: c.items.map((i) =>
+      i.kind === "custom"
+        ? { ...i, label: i.label.trim(), command: i.command.trim() }
+        : i,
+    ),
+  }));
+  return JSON.stringify(clean) === JSON.stringify(defaultLayout(catalog))
+    ? []
+    : clean;
+}
+
+export const isBuiltinCategory = (name: string, catalog = SSH_CATALOG) =>
+  catalog.categories.includes(name);
+
+/** Moves an entry so it ends up before position `to` of the original list. */
+export function moveTo<T>(list: T[], from: number, to: number) {
+  const next = [...list];
+  const [entry] = next.splice(from, 1);
+  next.splice(to > from ? to - 1 : to, 0, entry);
+  return next;
+}
+
+/**
+ * Moves a command before position `to.index` of category `to.category`.
+ * Built-in commands stay in their category; custom ones may change category.
+ */
+export function moveCommand(
+  layout: CommandCategory[],
+  from: { category: number; index: number },
+  to: { category: number; index: number },
+) {
+  const item = layout[from.category]?.items[from.index];
+  if (!item || !layout[to.category]) return layout;
+  if (from.category === to.category)
+    return layout.map((c, i) =>
+      i === to.category
+        ? { ...c, items: moveTo(c.items, from.index, to.index) }
+        : c,
+    );
+  if (item.kind === "builtin") return layout;
+  return layout.map((c, i) => {
+    if (i === from.category)
+      return { ...c, items: c.items.filter((_, j) => j !== from.index) };
+    if (i !== to.category) return c;
+    const items = [...c.items];
+    items.splice(to.index, 0, item);
+    return { ...c, items };
+  });
+}
+
+export function builtinLabel(id: string, catalog = SSH_CATALOG) {
+  return catalog.commands.find((c) => c.id === id)?.label ?? id;
+}
+
+const utf8 = (s: string) => new TextEncoder().encode(s).length;
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
+
+/** Problems in an edited layout; the backend applies the same limits. */
+export function layoutProblems(layout: CommandCategory[]): string[] {
+  const problems: string[] = [];
+  const names = new Set<string>();
+  let custom = 0;
+  if (layout.length > 64) problems.push("At most 64 categories.");
+  layout.forEach((category, c) => {
+    const name = category.name.trim();
+    const where = name || `Category ${c + 1}`;
+    if (!name || utf8(name) > 48 || CONTROL.test(name))
+      problems.push(`${where}: the name needs 1–48 bytes.`);
+    else if (names.has(name.toLowerCase()))
+      problems.push(`${where}: another category has this name.`);
+    names.add(name.toLowerCase());
+    if (category.items.length > 200)
+      problems.push(`${where}: at most 200 commands.`);
+    category.items.forEach((item, i) => {
+      if (item.kind !== "custom") return;
+      custom++;
+      const label = item.label.trim();
+      const command = item.command.trim();
+      const at = `${where}, ${label || `command ${i + 1}`}`;
+      if (!label || utf8(label) > 64 || CONTROL.test(label))
+        problems.push(`${at}: the name needs 1–64 bytes.`);
+      if (!command || utf8(command) > 4096 || CONTROL.test(command))
+        problems.push(
+          `${at}: enter one line (up to 4096 bytes) without control characters.`,
+        );
+    });
+  });
+  if (custom > 500) problems.push("At most 500 custom commands.");
+  return problems;
+}
+
+function customCommand(
+  category: string,
+  item: Extract<CommandItem, { kind: "custom" }>,
+  index: number,
+): SshCommand {
+  return {
+    id: `custom-${index}`,
+    category,
+    label: item.label,
+    custom: true,
+    danger: item.mode === "confirm",
+    insert: item.mode === "insert",
+    build: () => item.command,
+  };
+}
+
+/** Visible categories with their commands, in the user's order. */
+export function panelCommands(
+  saved?: CommandCategory[],
+  catalog = SSH_CATALOG,
+) {
+  const byId = new Map(catalog.commands.map((c) => [c.id, c]));
+  let index = 0;
+  return resolveLayout(saved, catalog)
+    .filter((c) => !c.hidden)
+    .map((category) => ({
+      name: category.name,
+      commands: category.items.map((item) =>
+        item.kind === "custom"
+          ? customCommand(category.name, item, index++)
+          : { ...byId.get(item.id)!, category: category.name },
+      ),
+    }));
+}
+
+/** Platform commands stay out of the list unless the probe found the platform. */
+export function shown(command: SshCommand, probe?: Probe) {
+  return !command.platform || !!probe?.tools.includes(command.platform);
 }
 
 /** Why the command cannot run, or null. Without a probe everything is allowed. */

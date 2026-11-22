@@ -43,8 +43,13 @@ import {
   PanelRight,
   ArrowLeftRight,
   Route,
+  ExternalLink,
 } from "lucide-react";
 import { TerminalPane } from "./TerminalPane";
+import { terminalFontChoices } from "./terminal-font";
+import { KeyFileInput } from "./KeyFileInput";
+import { Popout } from "./Popout";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   useWorkspaceLayout,
   updateWorkspaceLayout,
@@ -73,6 +78,7 @@ import {
   blankProfile,
   connectable,
   rdpSettings,
+  statisticsItems,
   protocolLabel,
   sessionDetail,
   type Bootstrap,
@@ -81,6 +87,7 @@ import {
   type Preferences,
   type Profile,
   type Protocol,
+  type RdpToolsSignIn,
 } from "./types";
 import { LocalShellSelect } from "./LocalShellSelect";
 import { UpdateNotice, type UpdateStatus } from "./UpdateNotice";
@@ -115,7 +122,7 @@ import {
   swapPane,
 } from "./input-policy";
 import "./style.css";
-import { applyChrome, themeFor } from "./themes";
+import { applyChrome, themeFor, withTextColor } from "./themes";
 
 const initial: Preferences = {
   version: 1,
@@ -183,6 +190,7 @@ function App() {
   const [noticeBottom, setNoticeBottom] = useState(12);
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const [findRequest, setFindRequest] = useState({ id: 0, revision: 0 });
+  const [popoutRequest, setPopoutRequest] = useState({ id: 0, revision: 0 });
   const [prefs, setPrefs] = useState(initial),
     [canSave, setCanSave] = useState(false),
     [notice, setNoticeText] = useState("");
@@ -214,6 +222,7 @@ function App() {
   // RDP bookmarks whose remote-tools side panel is open. Their SSH tools
   // sessions live in `lives` under an internal key (backend RDP_TOOLS_KEY).
   const [rdpTools, setRdpTools] = useState<number[]>([]);
+  const [poppedTools, setPoppedTools] = useState<number[]>([]);
   // SSH bookmarks whose tools side panel is open, and the latest request to
   // open its storage view at a folder (from the Files menu).
   const [sshTools, setSshTools] = useState<number[]>([]);
@@ -1889,6 +1898,26 @@ function App() {
                         <Search size={14} />
                       </button>
                     )}
+                  {l &&
+                    !l.meta?.finished &&
+                    !l.telnetLineEditing &&
+                    currentProtocol !== "Rdp" &&
+                    currentProtocol !== "Vnc" && (
+                      <button
+                        className="icon"
+                        title="Open in own window"
+                        aria-label="Open in own window"
+                        disabled={!l.meta?.connected}
+                        onClick={() =>
+                          setPopoutRequest((r) => ({
+                            id: l.id,
+                            revision: r.revision + 1,
+                          }))
+                        }
+                      >
+                        <ExternalLink size={14} />
+                      </button>
+                    )}
                   {l?.logging?.active && (
                     <span
                       className="logging-indicator"
@@ -2009,6 +2038,35 @@ function App() {
                         live={toolsLive(id)}
                         onConnect={() => startTools(id)}
                         onDisconnect={() => stopTools(id)}
+                        layout={prefs.rdp_commands}
+                        shellPopped={poppedTools.includes(
+                          toolsLive(id)?.id ?? -1,
+                        )}
+                        error={error}
+                        statistics={
+                          toolsLive(id) && (
+                            <Statistics
+                              key={toolsLive(id)!.id}
+                              id={toolsLive(id)!.id}
+                              networkUnit={view.statistics.network_unit}
+                              hidden={[
+                                "Host",
+                                "Network",
+                                "Uptime",
+                                "Disk",
+                                "Latency",
+                              ]}
+                              intervalMs={2000}
+                              processes={false}
+                            />
+                          )
+                        }
+                        onPopOut={() =>
+                          setPopoutRequest((r) => ({
+                            id: toolsLive(id)?.id ?? 0,
+                            revision: r.revision + 1,
+                          }))
+                        }
                         onClose={() => {
                           stopTools(id);
                           setRdpTools((t) => t.filter((v) => v !== id));
@@ -2030,6 +2088,23 @@ function App() {
                           toolsLive(id) && (
                             <TerminalPane
                               key={toolsLive(id)!.id}
+                              title={`${p.name} tools`}
+                              popoutRequest={
+                                popoutRequest.id === toolsLive(id)!.id
+                                  ? popoutRequest.revision
+                                  : 0
+                              }
+                              onPopped={(popped) => {
+                                const toolsId = toolsLive(id)?.id;
+                                if (toolsId === undefined) return;
+                                setPoppedTools((t) =>
+                                  popped
+                                    ? t.includes(toolsId)
+                                      ? t
+                                      : [...t, toolsId]
+                                    : t.filter((v) => v !== toolsId),
+                                );
+                              }}
                               findRequest={0}
                               active={false}
                               focusRequest={0}
@@ -2085,6 +2160,10 @@ function App() {
                   >
                     {l ? (
                       <TerminalPane
+                        title={p.name}
+                        popoutRequest={
+                          popoutRequest.id === l.id ? popoutRequest.revision : 0
+                        }
                         findRequest={
                           findRequest.id === l.id ? findRequest.revision : 0
                         }
@@ -2100,9 +2179,9 @@ function App() {
                             ? view.font_size
                             : prefs.font_size)
                         }
-                        fontFamily={view.font_family}
+                        fontFamily={p.font_family || view.font_family}
                         scrollbackLines={prefs.scrollback_lines}
-                        theme={theme.terminal}
+                        theme={withTextColor(theme.terminal, p.font_color)}
                         highlighting={view.highlighting}
                         onMeta={onMeta}
                         onLogging={onLogging}
@@ -2133,6 +2212,7 @@ function App() {
                         profile={p}
                         live={l}
                         storageRequest={storageRequests[id]}
+                        layout={prefs.ssh_commands}
                         onClose={() =>
                           setSshTools((t) => t.filter((v) => v !== id))
                         }
@@ -2155,6 +2235,10 @@ function App() {
                   </div>
                 ) : l ? (
                   <TerminalPane
+                    title={p.name}
+                    popoutRequest={
+                      popoutRequest.id === l.id ? popoutRequest.revision : 0
+                    }
                     findRequest={
                       findRequest.id === l.id ? findRequest.revision : 0
                     }
@@ -2170,9 +2254,9 @@ function App() {
                         ? view.font_size
                         : prefs.font_size)
                     }
-                    fontFamily={view.font_family}
+                    fontFamily={p.font_family || view.font_family}
                     scrollbackLines={prefs.scrollback_lines}
-                    theme={theme.terminal}
+                    theme={withTextColor(theme.terminal, p.font_color)}
                     highlighting={view.highlighting}
                     onMeta={onMeta}
                     onLogging={onLogging}
@@ -2244,6 +2328,7 @@ function App() {
                       key={l.id}
                       id={l.id}
                       networkUnit={view.statistics.network_unit}
+                      hidden={p.statistics_hidden}
                     />
                   )}
               </section>
@@ -2518,6 +2603,7 @@ function App() {
       {draft && (
         <Modal
           title={draft.id ? "Edit session" : "New session"}
+          className="settings-dialog session-editor"
           onClose={() => setDraft(null)}
         >
           <ProfileEditor
@@ -2525,6 +2611,8 @@ function App() {
             onChange={setDraft}
             statisticsEnabled={prefs.statistics.enabled}
             globalFontSize={prefs.font_size}
+            globalFontFamily={view.font_family}
+            globalTextColor={theme.terminal.foreground ?? "#cdd6f4"}
             onIconBusy={setProfileIconBusy}
             groups={groupNames(prefs.profiles)}
             profiles={prefs.profiles}
@@ -2672,6 +2760,8 @@ function ProfileEditor({
   onChange: set,
   statisticsEnabled,
   globalFontSize,
+  globalFontFamily,
+  globalTextColor,
   onIconBusy,
   groups,
   profiles,
@@ -2679,20 +2769,31 @@ function ProfileEditor({
   groups: string[];
   profiles: Profile[];
   globalFontSize: number;
+  globalFontFamily: string;
+  globalTextColor: string;
   statisticsEnabled: boolean;
   value: Profile;
   onChange: (p: Profile) => void;
   onIconBusy: (busy: boolean) => void;
 }) {
   const [tab, setTab] = useState("connection");
+  const [customFont, setCustomFont] = useState(
+    !!p.font_family && !terminalFontChoices.includes(p.font_family),
+  );
+  const gateway = ["Ssh", "Telnet", "Rdp", "Vnc"].includes(p.protocol);
+  const tabs = [
+    "connection",
+    ...(gateway ? ["gateway"] : []),
+    ...(p.protocol === "Ssh" ? ["x11"] : []),
+    // Remote desktops have no terminal settings (the RDP tools terminal uses
+    // the global font).
+    ...(p.protocol === "Rdp" || p.protocol === "Vnc" ? [] : ["terminal"]),
+    ...(p.protocol === "Ssh" ? ["statistics"] : []),
+  ];
   // A protocol change can remove the open tab; fall back to the connection tab.
   useEffect(() => {
-    if (
-      (tab === "terminal" && (p.protocol === "Rdp" || p.protocol === "Vnc")) ||
-      (tab === "statistics" && p.protocol !== "Ssh")
-    )
-      setTab("connection");
-  }, [p.protocol, tab]);
+    if (!tabs.includes(tab)) setTab("connection");
+  }, [tabs, tab]);
   const change = (patch: Partial<Profile>) => set({ ...p, ...patch });
   const [ports, setPorts] = useState<string[]>([]);
   const [portStatus, setPortStatus] = useState("");
@@ -2720,15 +2821,8 @@ function ProfileEditor({
       <SettingsTabs
         prefix="session"
         label="Session settings sections"
-        tabs={
-          p.protocol === "Ssh"
-            ? ["connection", "terminal", "statistics"]
-            : // Remote desktops have no terminal settings (the RDP tools
-              // terminal uses the global font).
-              p.protocol === "Rdp" || p.protocol === "Vnc"
-              ? ["connection"]
-              : ["connection", "terminal"]
-        }
+        tabs={tabs}
+        labels={{ gateway: "Gateways", x11: "X11" }}
         value={tab}
         onChange={setTab}
       />
@@ -2739,172 +2833,320 @@ function ProfileEditor({
           aria-labelledby="session-tab-connection"
           hidden={tab !== "connection"}
         >
-          <label>
-            Session name
-            <input
-              autoFocus
-              value={p.name}
-              maxLength={128}
-              onChange={(e) => change({ name: e.target.value })}
-              placeholder="A name you recognize"
-            />
-          </label>
-          <label>
-            Group
-            <GroupCombo
-              value={p.group ?? ""}
-              options={groups}
-              maxLength={64}
-              onChange={(group) => change({ group })}
-              onBlur={(e) => change({ group: e.target.value.trim() })}
-              placeholder="Optional, for example Office"
-            />
-          </label>
-          <IconPicker
-            value={p.icon}
-            onChange={(icon) => change({ icon })}
-            onBusy={onIconBusy}
-          />
-          {p.protocol !== "Local" && p.protocol !== "Serial" && (
-            <>
-              <label>
-                MAC address
-                <input
-                  aria-label="MAC address for Wake-on-LAN"
-                  value={p.mac_address ?? ""}
-                  maxLength={17}
-                  placeholder="02:11:22:33:44:55"
-                  onChange={(e) =>
-                    change({ mac_address: e.target.value.replaceAll("-", ":") })
-                  }
-                  onBlur={(e) =>
-                    change({
-                      mac_address: e.target.value
-                        .trim()
-                        .replaceAll("-", ":")
-                        .toUpperCase(),
-                    })
-                  }
-                />
-              </label>
-              <p>Optional. Used to wake this computer with Wake-on-LAN.</p>
-              {!validMac(p.mac_address ?? "") && (
-                <p role="alert">
-                  Enter a valid MAC address, for example 02:11:22:33:44:55.
-                </p>
-              )}
-            </>
-          )}
-          <div className="form-row">
+          <fieldset className="settings-card">
+            <legend>Session</legend>
             <label>
-              Protocol
-              <select
-                value={p.protocol}
-                onChange={(e) => {
-                  const protocol = e.target.value as Protocol;
-                  change({
-                    protocol,
-                    port: {
-                      Ssh: 22,
-                      Telnet: 23,
-                      Rdp: 3389,
-                      Vnc: 5900,
-                      Serial: 0,
-                      Local: 0,
-                    }[protocol],
-                    // A local terminal has no host; other types start empty too.
-                    ...(protocol === "Local" || p.protocol === "Local"
-                      ? { host: "" }
-                      : {}),
-                    // Gateways apply to the four network protocols.
-                    ...(!["Ssh", "Telnet", "Rdp", "Vnc"].includes(protocol)
-                      ? { gateways: [] }
-                      : {}),
-                    ...(protocol === "Local"
-                      ? {
-                          local: p.local ?? {
-                            shell: "PowerShell",
-                            directory: "",
-                          },
-                          ssh: { ...p.ssh, x11_forward: false },
-                        }
-                      : {}),
-                  });
-                }}
-              >
-                {(
-                  [
-                    "Ssh",
-                    "Telnet",
-                    "Rdp",
-                    "Vnc",
-                    "Serial",
-                    "Local",
-                  ] as Protocol[]
-                ).map((v) => (
-                  <option key={v} value={v}>
-                    {protocolLabel(v)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {p.protocol === "Local" && (
-              <label>
-                Shell
-                <LocalShellSelect
-                  value={p.local?.shell ?? "PowerShell"}
-                  onChange={(shell) =>
-                    change({
-                      local: { directory: p.local?.directory ?? "", shell },
-                    })
-                  }
-                />
-              </label>
-            )}
-            {p.protocol !== "Local" && (
-              <label>
-                {p.protocol === "Serial" ? "COM device" : "Host / IP"}
-                <input
-                  value={p.host}
-                  list={p.protocol === "Serial" ? "serial-ports" : undefined}
-                  maxLength={253}
-                  onChange={(e) => change({ host: e.target.value })}
-                />
-              </label>
-            )}
-            {p.protocol !== "Serial" && p.protocol !== "Local" && (
-              <label className="port">
-                Port
-                <input
-                  type="number"
-                  min={1}
-                  max={65535}
-                  value={p.port}
-                  onChange={(e) => change({ port: Number(e.target.value) })}
-                />
-              </label>
-            )}
-          </div>
-          {p.protocol === "Local" && (
-            <label>
-              Start directory
+              Session name
               <input
-                value={p.local?.directory ?? ""}
-                maxLength={1024}
-                placeholder="Empty: your user folder, for example C:\Work"
-                onChange={(e) =>
-                  change({
-                    local: {
-                      shell: p.local?.shell ?? "PowerShell",
-                      directory: e.target.value,
-                    },
-                  })
-                }
+                autoFocus
+                value={p.name}
+                maxLength={128}
+                onChange={(e) => change({ name: e.target.value })}
+                placeholder="A name you recognize"
               />
             </label>
-          )}
+            <label>
+              Group
+              <GroupCombo
+                value={p.group ?? ""}
+                options={groups}
+                maxLength={64}
+                onChange={(group) => change({ group })}
+                onBlur={(e) => change({ group: e.target.value.trim() })}
+                placeholder="Optional, for example Office"
+              />
+            </label>
+            <IconPicker
+              value={p.icon}
+              onChange={(icon) => change({ icon })}
+              onBusy={onIconBusy}
+            />
+            {p.protocol !== "Local" && p.protocol !== "Serial" && (
+              <>
+                <label>
+                  MAC address
+                  <input
+                    aria-label="MAC address for Wake-on-LAN"
+                    value={p.mac_address ?? ""}
+                    maxLength={17}
+                    placeholder="02:11:22:33:44:55"
+                    onChange={(e) =>
+                      change({
+                        mac_address: e.target.value.replaceAll("-", ":"),
+                      })
+                    }
+                    onBlur={(e) =>
+                      change({
+                        mac_address: e.target.value
+                          .trim()
+                          .replaceAll("-", ":")
+                          .toUpperCase(),
+                      })
+                    }
+                  />
+                </label>
+                <p>Optional. Used to wake this computer with Wake-on-LAN.</p>
+                {!validMac(p.mac_address ?? "") && (
+                  <p role="alert">
+                    Enter a valid MAC address, for example 02:11:22:33:44:55.
+                  </p>
+                )}
+              </>
+            )}
+          </fieldset>
+          <fieldset className="settings-card">
+            <legend>
+              {p.protocol === "Local"
+                ? "Shell"
+                : p.protocol === "Serial"
+                  ? "Device"
+                  : "Server"}
+            </legend>
+            <div className="form-row">
+              <label>
+                Protocol
+                <select
+                  value={p.protocol}
+                  onChange={(e) => {
+                    const protocol = e.target.value as Protocol;
+                    change({
+                      protocol,
+                      port: {
+                        Ssh: 22,
+                        Telnet: 23,
+                        Rdp: 3389,
+                        Vnc: 5900,
+                        Serial: 0,
+                        Local: 0,
+                      }[protocol],
+                      // A local terminal has no host; other types start empty too.
+                      ...(protocol === "Local" || p.protocol === "Local"
+                        ? { host: "" }
+                        : {}),
+                      // Gateways apply to the four network protocols.
+                      ...(!["Ssh", "Telnet", "Rdp", "Vnc"].includes(protocol)
+                        ? { gateways: [] }
+                        : {}),
+                      ...(protocol === "Local"
+                        ? {
+                            local: p.local ?? {
+                              shell: "PowerShell",
+                              directory: "",
+                            },
+                            ssh: { ...p.ssh, x11_forward: false },
+                          }
+                        : {}),
+                    });
+                  }}
+                >
+                  {(
+                    [
+                      "Ssh",
+                      "Telnet",
+                      "Rdp",
+                      "Vnc",
+                      "Serial",
+                      "Local",
+                    ] as Protocol[]
+                  ).map((v) => (
+                    <option key={v} value={v}>
+                      {protocolLabel(v)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {p.protocol === "Local" && (
+                <label>
+                  Shell
+                  <LocalShellSelect
+                    value={p.local?.shell ?? "PowerShell"}
+                    onChange={(shell) =>
+                      change({
+                        local: { directory: p.local?.directory ?? "", shell },
+                      })
+                    }
+                  />
+                </label>
+              )}
+              {p.protocol !== "Local" && (
+                <label>
+                  {p.protocol === "Serial" ? "COM device" : "Host / IP"}
+                  <input
+                    value={p.host}
+                    list={p.protocol === "Serial" ? "serial-ports" : undefined}
+                    maxLength={253}
+                    onChange={(e) => change({ host: e.target.value })}
+                  />
+                </label>
+              )}
+              {p.protocol !== "Serial" && p.protocol !== "Local" && (
+                <label className="port">
+                  Port
+                  <input
+                    type="number"
+                    min={1}
+                    max={65535}
+                    value={p.port}
+                    onChange={(e) => change({ port: Number(e.target.value) })}
+                  />
+                </label>
+              )}
+            </div>
+            {p.protocol === "Local" && (
+              <label>
+                Start directory
+                <input
+                  value={p.local?.directory ?? ""}
+                  maxLength={1024}
+                  placeholder="Empty: your user folder, for example C:\Work"
+                  onChange={(e) =>
+                    change({
+                      local: {
+                        shell: p.local?.shell ?? "PowerShell",
+                        directory: e.target.value,
+                      },
+                    })
+                  }
+                />
+              </label>
+            )}
+            {p.protocol !== "Serial" &&
+              p.protocol !== "Telnet" &&
+              p.protocol !== "Local" && (
+                <label>
+                  Username
+                  <input
+                    value={p.username}
+                    maxLength={256}
+                    onChange={(e) => change({ username: e.target.value })}
+                  />
+                </label>
+              )}
+            {p.protocol === "Rdp" && (
+              <label>
+                Remote tools sign-in
+                <select
+                  value={p.rdp?.tools_sign_in ?? "Password"}
+                  onChange={(e) =>
+                    change({
+                      rdp: {
+                        ...rdpSettings(p),
+                        tools_sign_in: e.target.value as RdpToolsSignIn,
+                      },
+                    })
+                  }
+                >
+                  <option value="Password">Password of this account</option>
+                  <option value="Agent">SSH key from the Windows agent</option>
+                  <option value="KeyFile">Private-key file</option>
+                </select>
+              </label>
+            )}
+            {p.protocol === "Rdp" && p.rdp?.tools_sign_in === "KeyFile" && (
+              <label>
+                Remote tools private-key path
+                <KeyFileInput
+                  label="Remote tools private-key path"
+                  value={p.rdp?.tools_key_file ?? ""}
+                  onChange={(tools_key_file) =>
+                    change({ rdp: { ...rdpSettings(p), tools_key_file } })
+                  }
+                />
+                <small>
+                  An encrypted key asks for its passphrase when connecting.
+                </small>
+              </label>
+            )}
+            {p.protocol === "Ssh" && (
+              <>
+                <label>
+                  Authentication
+                  <select
+                    value={p.ssh.auth}
+                    onChange={(e) =>
+                      ssh({ auth: e.target.value as Profile["ssh"]["auth"] })
+                    }
+                  >
+                    <option value="WindowsAgent">Windows SSH agent</option>
+                    <option value="KeyFile">Private-key file</option>
+                    <option value="Password">Password</option>
+                  </select>
+                </label>
+                {p.ssh.auth === "WindowsAgent" ? (
+                  <>
+                    <label>
+                      Identity fingerprint{" "}
+                      <span className="optional">optional</span>
+                      <input
+                        value={p.ssh.identity_fingerprint}
+                        onChange={(e) =>
+                          ssh({ identity_fingerprint: e.target.value })
+                        }
+                        placeholder="SHA256:…"
+                      />
+                    </label>
+                    <details className="advanced">
+                      <summary>Agent and OpenSSH identity rules</summary>
+                      <label>
+                        OpenSSH identity host{" "}
+                        <span className="optional">optional</span>
+                        <input
+                          value={p.ssh.config_host}
+                          maxLength={253}
+                          onChange={(e) => ssh({ config_host: e.target.value })}
+                          placeholder="Uses Host / IP or a unique matching HostName entry"
+                        />
+                      </label>
+                      <small>
+                        Reads IdentityFile / IdentitiesOnly from your user SSH
+                        config. Endpoint fields remain as entered. An explicit
+                        fingerprint overrides identity-config lookup.
+                      </small>
+                      <label>
+                        SSH identity config file{" "}
+                        <span className="optional">optional</span>
+                        <input
+                          value={p.ssh.config_file}
+                          onChange={(e) => ssh({ config_file: e.target.value })}
+                          placeholder="Default: your user .ssh/config"
+                        />
+                      </label>
+                      <label>
+                        Local named pipe
+                        <input
+                          value={p.ssh.agent_pipe}
+                          onChange={(e) => ssh({ agent_pipe: e.target.value })}
+                        />
+                      </label>
+                    </details>
+                  </>
+                ) : p.ssh.auth === "Password" ? (
+                  <small>
+                    A Windows prompt asks for the password when connecting;
+                    "Remember me" keeps it in the Windows Credential Manager for
+                    this saved connection on this computer, never in the
+                    bookmark file.
+                  </small>
+                ) : (
+                  <label>
+                    Private-key path
+                    <KeyFileInput
+                      label="Private-key path"
+                      value={p.ssh.key_file}
+                      onChange={(key_file) => ssh({ key_file })}
+                    />
+                    <small>
+                      An encrypted key asks for its passphrase when connecting;
+                      "Remember me" keeps it in the Windows Credential Manager.
+                    </small>
+                  </label>
+                )}
+              </>
+            )}
+          </fieldset>
           {p.protocol === "Serial" && (
-            <>
+            <fieldset className="settings-card wide">
+              <legend>Serial port</legend>
               <datalist id="serial-ports">
                 {ports.map((port) => (
                   <option key={port} value={port} />
@@ -3036,25 +3278,13 @@ function ProfileEditor({
                 Connecting can change control lines or reset a device. No
                 automatic commands or local echo are sent. Enter sends CR.
               </p>
-            </>
+            </fieldset>
           )}
-          {p.protocol !== "Serial" &&
-            p.protocol !== "Telnet" &&
-            p.protocol !== "Local" && (
-              <label>
-                Username
-                <input
-                  value={p.username}
-                  maxLength={256}
-                  onChange={(e) => change({ username: e.target.value })}
-                />
-              </label>
-            )}
           {p.protocol === "Vnc" && (
             <VncSettings profile={p} onChange={change} />
           )}
           {p.protocol === "Rdp" && (
-            <fieldset className="session-statistics-settings">
+            <fieldset className="session-statistics-settings settings-card wide">
               <legend>Remote desktop</legend>
               <label className="check-label">
                 <input
@@ -3073,152 +3303,79 @@ function ProfileEditor({
                 Saving a change reconnects a running session; open programs on
                 the remote computer stay open.
               </small>
-              <label>
-                Remote audio
-                <select
-                  value={p.rdp?.audio ?? "Off"}
-                  onChange={(e) =>
-                    change({
-                      rdp: {
-                        ...rdpSettings(p),
-                        audio: e.target.value as "Local" | "Remote" | "Off",
-                      },
-                    })
-                  }
-                >
-                  <option value="Off">Do not play</option>
-                  <option value="Local">Play on this computer</option>
-                  <option value="Remote">Play on the remote computer</option>
-                </select>
-              </label>
-              <label>
-                Windows key combinations
-                <select
-                  value={p.rdp?.keyboard ?? "Remote"}
-                  onChange={(e) =>
-                    change({
-                      rdp: {
-                        ...rdpSettings(p),
-                        keyboard: e.target.value as "Remote" | "Local",
-                      },
-                    })
-                  }
-                >
-                  <option value="Remote">
-                    On the remote computer while it has focus
-                  </option>
-                  <option value="Local">On this computer</option>
-                </select>
-              </label>
+              <div className="settings-columns">
+                <label>
+                  Remote audio
+                  <select
+                    value={p.rdp?.audio ?? "Off"}
+                    onChange={(e) =>
+                      change({
+                        rdp: {
+                          ...rdpSettings(p),
+                          audio: e.target.value as "Local" | "Remote" | "Off",
+                        },
+                      })
+                    }
+                  >
+                    <option value="Off">Do not play</option>
+                    <option value="Local">Play on this computer</option>
+                    <option value="Remote">Play on the remote computer</option>
+                  </select>
+                </label>
+                <label>
+                  Windows key combinations
+                  <select
+                    value={p.rdp?.keyboard ?? "Remote"}
+                    onChange={(e) =>
+                      change({
+                        rdp: {
+                          ...rdpSettings(p),
+                          keyboard: e.target.value as "Remote" | "Local",
+                        },
+                      })
+                    }
+                  >
+                    <option value="Remote">
+                      On the remote computer while it has focus
+                    </option>
+                    <option value="Local">On this computer</option>
+                  </select>
+                </label>
+              </div>
               <RdpCertificate
                 profileId={p.id}
                 viaGateway={!!p.gateways?.length}
               />
-              <p className="hint">
-                Drives, printers, smart cards and other devices are not shared.
-                A Windows prompt asks for the password; "Remember me" keeps it
-                in Windows Credential Manager on this computer. Windows shows
-                its own warning when it cannot verify the server.
-              </p>
             </fieldset>
           )}
-          {p.protocol === "Ssh" && (
-            <>
-              <X11Settings
-                enabled={p.ssh.x11_forward ?? false}
-                onChange={(x11_forward) => ssh({ x11_forward })}
-              />
-              <label>
-                Authentication
-                <select
-                  value={p.ssh.auth}
-                  onChange={(e) =>
-                    ssh({ auth: e.target.value as Profile["ssh"]["auth"] })
-                  }
-                >
-                  <option value="WindowsAgent">Windows SSH agent</option>
-                  <option value="KeyFile">Private-key file</option>
-                  <option value="Password">Password</option>
-                </select>
-              </label>
-              {p.ssh.auth === "WindowsAgent" ? (
-                <>
-                  <label>
-                    Identity fingerprint{" "}
-                    <span className="optional">optional</span>
-                    <input
-                      value={p.ssh.identity_fingerprint}
-                      onChange={(e) =>
-                        ssh({ identity_fingerprint: e.target.value })
-                      }
-                      placeholder="SHA256:…"
-                    />
-                  </label>
-                  <details className="advanced">
-                    <summary>Agent and OpenSSH identity rules</summary>
-                    <label>
-                      OpenSSH identity host{" "}
-                      <span className="optional">optional</span>
-                      <input
-                        value={p.ssh.config_host}
-                        maxLength={253}
-                        onChange={(e) => ssh({ config_host: e.target.value })}
-                        placeholder="Uses Host / IP or a unique matching HostName entry"
-                      />
-                    </label>
-                    <small>
-                      Reads IdentityFile / IdentitiesOnly from your user SSH
-                      config. Endpoint fields remain as entered. An explicit
-                      fingerprint overrides identity-config lookup.
-                    </small>
-                    <label>
-                      SSH identity config file{" "}
-                      <span className="optional">optional</span>
-                      <input
-                        value={p.ssh.config_file}
-                        onChange={(e) => ssh({ config_file: e.target.value })}
-                        placeholder="Default: your user .ssh/config"
-                      />
-                    </label>
-                    <label>
-                      Local named pipe
-                      <input
-                        value={p.ssh.agent_pipe}
-                        onChange={(e) => ssh({ agent_pipe: e.target.value })}
-                      />
-                    </label>
-                  </details>
-                </>
-              ) : p.ssh.auth === "Password" ? (
-                <small>
-                  A Windows prompt asks for the password when connecting;
-                  "Remember me" keeps it in the Windows Credential Manager for
-                  this saved connection on this computer, never in the bookmark
-                  file.
-                </small>
-              ) : (
-                <label>
-                  Private-key path
-                  <input
-                    value={p.ssh.key_file}
-                    onChange={(e) => ssh({ key_file: e.target.value })}
-                  />
-                  <small>
-                    For encrypted keys, load the key into the Windows agent.
-                  </small>
-                </label>
-              )}
-            </>
-          )}
         </div>
-        {["Ssh", "Telnet", "Rdp", "Vnc"].includes(p.protocol) &&
-          tab === "connection" && (
+        {p.protocol === "Ssh" && (
+          <div
+            role="tabpanel"
+            id="session-panel-x11"
+            aria-labelledby="session-tab-x11"
+            hidden={tab !== "x11"}
+          >
+            <X11Settings
+              enabled={p.ssh.x11_forward ?? false}
+              onChange={(x11_forward) => ssh({ x11_forward })}
+            />
+          </div>
+        )}
+        {gateway && (
+          <div
+            role="tabpanel"
+            id="session-panel-gateway"
+            aria-labelledby="session-tab-gateway"
+            hidden={tab !== "gateway"}
+          >
             <GatewayEditor
               profile={p}
               profiles={profiles}
               onChange={(gateways) => change({ gateways })}
             />
-          )}
+          </div>
+        )}
         {p.protocol === "Ssh" && (
           <div
             role="tabpanel"
@@ -3226,7 +3383,7 @@ function ProfileEditor({
             aria-labelledby="session-tab-statistics"
             hidden={tab !== "statistics"}
           >
-            <fieldset className="session-statistics-settings">
+            <fieldset className="session-statistics-settings settings-card">
               <legend>Host statistics</legend>
               <label className="check-label">
                 <input
@@ -3253,6 +3410,28 @@ function ProfileEditor({
                 </button>
               </div>
             </fieldset>
+            <fieldset className="settings-card">
+              <legend>Shown values</legend>
+              {statisticsItems.map(([item, label]) => (
+                <label className="check-label" key={item}>
+                  <input
+                    type="checkbox"
+                    checked={!p.statistics_hidden?.includes(item)}
+                    onChange={(e) => {
+                      const hidden = (p.statistics_hidden ?? []).filter(
+                        (h) => h !== item,
+                      );
+                      change({
+                        statistics_hidden: e.target.checked
+                          ? hidden
+                          : [...hidden, item],
+                      });
+                    }}
+                  />
+                  {label}
+                </label>
+              ))}
+            </fieldset>
           </div>
         )}
         <div
@@ -3261,27 +3440,87 @@ function ProfileEditor({
           aria-labelledby="session-tab-terminal"
           hidden={tab !== "terminal"}
         >
-          <label>
-            Font size override
-            <input
-              aria-label="Session font size"
-              type="number"
-              min={8}
-              max={32}
-              step="any"
-              placeholder={`Global (${globalFontSize} px)`}
-              value={p.font_size ?? ""}
-              onChange={(e) =>
-                change({
-                  font_size:
-                    e.target.value === "" ? null : Number(e.target.value),
-                })
-              }
-            />
-            <small>8–32 px. Leave empty to use the global setting.</small>
-          </label>
+          <fieldset className="settings-card">
+            <legend>Font</legend>
+            <label>
+              Font size override
+              <input
+                aria-label="Session font size"
+                type="number"
+                min={8}
+                max={32}
+                step="any"
+                placeholder={`Global (${globalFontSize} px)`}
+                value={p.font_size ?? ""}
+                onChange={(e) =>
+                  change({
+                    font_size:
+                      e.target.value === "" ? null : Number(e.target.value),
+                  })
+                }
+              />
+              <small>8–32 px. Leave empty to use the global setting.</small>
+            </label>
+            <label>
+              Font family
+              <select
+                aria-label="Session font family"
+                value={customFont ? "custom" : (p.font_family ?? "")}
+                onChange={(e) => {
+                  const selected = e.target.value;
+                  setCustomFont(selected === "custom");
+                  if (selected !== "custom")
+                    change({ font_family: selected || null });
+                }}
+              >
+                <option value="">Global ({globalFontFamily})</option>
+                {terminalFontChoices.map((name) => (
+                  <option key={name} value={name}>
+                    {name === "YuuTerm JetBrains Mono"
+                      ? "JetBrains Mono Nerd Font (bundled)"
+                      : name}
+                  </option>
+                ))}
+                <option value="custom">Other installed font</option>
+              </select>
+            </label>
+            {customFont && (
+              <label>
+                Installed font name
+                <input
+                  aria-label="Session font name"
+                  value={p.font_family ?? ""}
+                  maxLength={128}
+                  onChange={(e) =>
+                    change({ font_family: e.target.value || null })
+                  }
+                />
+              </label>
+            )}
+            <div className="text-color-setting">
+              <label className="check-label">
+                <input
+                  type="checkbox"
+                  checked={!!p.font_color}
+                  onChange={(e) =>
+                    change({
+                      font_color: e.target.checked ? globalTextColor : null,
+                    })
+                  }
+                />
+                Font color override
+              </label>
+              <input
+                type="color"
+                aria-label="Session font color"
+                disabled={!p.font_color}
+                value={p.font_color ?? globalTextColor}
+                onChange={(e) => change({ font_color: e.target.value })}
+              />
+            </div>
+          </fieldset>
           {["Ssh", "Telnet", "Serial", "Local"].includes(p.protocol) && (
-            <fieldset className="session-statistics-settings">
+            <fieldset className="session-statistics-settings settings-card">
               <legend>Terminal output logging</legend>
               <label className="check-label">
                 <input
@@ -3347,4 +3586,7 @@ function ProfileEditor({
     </>
   );
 }
-createRoot(document.getElementById("root")!).render(<App />);
+// Terminal pop-out windows render only their terminal.
+createRoot(document.getElementById("root")!).render(
+  getCurrentWebviewWindow().label.startsWith("term-") ? <Popout /> : <App />,
+);

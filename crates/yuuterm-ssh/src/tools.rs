@@ -23,6 +23,8 @@ pub const PROBE_TOOLS: &[&str] = &[
     "ip",
     "last",
     "sudo",
+    // Proxmox VE; in /usr/bin, unlike qm and pct, so a plain user's PATH finds it.
+    "pveversion",
 ];
 
 /// Groups that grant journal or Docker access without sudo.

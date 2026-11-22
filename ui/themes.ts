@@ -558,3 +558,13 @@ export const applyChrome = (theme: Theme) => {
   for (const [key, name] of Object.entries(vars))
     root.setProperty(name, theme.ui[key as keyof Chrome]);
 };
+
+const textColorThemes = new WeakMap<object, Map<string, ITheme>>();
+export function withTextColor(theme: ITheme, color?: string | null): ITheme {
+  if (!color) return theme;
+  let byColor = textColorThemes.get(theme);
+  if (!byColor) textColorThemes.set(theme, (byColor = new Map()));
+  let colored = byColor.get(color);
+  if (!colored) byColor.set(color, (colored = { ...theme, foreground: color }));
+  return colored;
+}
