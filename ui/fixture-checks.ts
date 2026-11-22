@@ -262,6 +262,31 @@ export async function checkFixture(ids: number[]) {
       document.documentElement.dataset.fixtureChecks = "passed";
       return;
     }
+    if (scope === "popout") {
+      const { checkPopoutMain } = await import("./fixture-popout");
+      await checkPopoutMain(until);
+      await invoke("capture_report", { checks, passed: true });
+      document.documentElement.dataset.fixtureChecks = "passed";
+      return;
+    }
+    if (scope === "settings-layout" || scope === "session-layout") {
+      const { checkDialogLayout } = await import("./fixture-dialog-layout");
+      await checkDialogLayout(
+        until,
+        scope === "settings-layout" ? "settings" : "session",
+      );
+      await invoke("capture_report", { checks, passed: true });
+      document.documentElement.dataset.fixtureChecks = "passed";
+      return;
+    }
+    if (scope === "commands") {
+      const { checkCommandSettings } =
+        await import("./fixture-command-settings");
+      await checkCommandSettings(ids, until);
+      await invoke("capture_report", { checks, passed: true });
+      document.documentElement.dataset.fixtureChecks = "passed";
+      return;
+    }
     if (scope === "about") {
       const { checkAbout } = await import("./fixture-about-checks");
       await checkAbout(until);
@@ -1888,14 +1913,17 @@ async function checkSessionTabs(
       document
         .getElementById("session-tab-connection")
         ?.getAttribute("aria-selected") === "true" &&
-      document.querySelectorAll('dialog [role="tab"]').length === 3,
-    "SSH editor groups Connection, Terminal and Statistics into separate tabs",
+      Array.from(document.querySelectorAll('dialog [role="tab"]'))
+        .map((t) => t.textContent)
+        .join(",") === "Connection,Gateways,X11,Terminal,Statistics",
+    "SSH editor splits its settings into five sections",
   );
-  document
-    .getElementById("session-tab-connection")!
-    .dispatchEvent(
-      new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
-    );
+  for (const name of ["connection", "gateway", "x11"])
+    document
+      .getElementById(`session-tab-${name}`)!
+      .dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
+      );
   await until(
     () =>
       document

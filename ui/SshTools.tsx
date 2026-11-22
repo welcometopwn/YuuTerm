@@ -12,22 +12,24 @@ import {
   Search,
   X,
 } from "lucide-react";
-import type { Live, Profile } from "./types";
+import type { CommandCategory, Live, Profile } from "./types";
 import {
-  CATEGORIES,
-  COMMANDS,
   asRoot,
   rootShell,
+  shown,
   PARAM_LABELS,
   childPath,
   commandText,
   formatKib,
   matches,
+  panelCommands,
   parentPath,
   unavailable,
   validate,
   type Probe,
   type SshCommand,
+  SSH_CATALOG,
+  type Catalog,
 } from "./ssh-commands";
 
 type FolderSizes = {
@@ -56,6 +58,7 @@ export function SshTools({
   profile,
   live,
   storageRequest,
+  layout,
   onClose,
   onFocusTerminal,
   onOpenInFiles,
@@ -64,6 +67,8 @@ export function SshTools({
   profile: Profile;
   live?: Live;
   storageRequest?: StorageRequest;
+  /** Saved command layout from Settings; undefined keeps the default. */
+  layout?: CommandCategory[];
   onClose: () => void;
   onFocusTerminal: () => void;
   onOpenInFiles: (path: string) => void;
@@ -165,6 +170,7 @@ export function SshTools({
         <Commands
           live={live}
           probe={probe}
+          layout={layout}
           rootShellOpen={rootShellOpen}
           onRootShell={setRootShellOpen}
           enabled={connected && linux && probeState !== "checking"}
@@ -191,22 +197,28 @@ export function SshTools({
   );
 }
 
-function Commands({
+export function Commands({
   live,
   probe: detected,
-  rootShellOpen,
+  layout,
+  catalog = SSH_CATALOG,
+  rootShellOpen = false,
   onRootShell,
   enabled,
-  onStorage,
+  onStorage = () => {},
   onFocusTerminal,
+  hint = "Commands are typed into this terminal. Close editors or pagers first.",
   error,
 }: {
   live?: Live;
   probe?: Probe;
-  rootShellOpen: boolean;
-  onRootShell: (open: boolean) => void;
+  layout?: CommandCategory[];
+  catalog?: Catalog;
+  hint?: string;
+  rootShellOpen?: boolean;
+  onRootShell?: (open: boolean) => void;
   enabled: boolean;
-  onStorage: () => void;
+  onStorage?: () => void;
   onFocusTerminal: () => void;
   error: (e: unknown) => void;
 }) {
@@ -220,22 +232,31 @@ function Commands({
     value: string;
     action?: string;
   } | null>(null);
-  const visible = useMemo(
-    () => COMMANDS.filter((c) => matches(c, query)),
-    [query],
+  const categories = useMemo(
+    () =>
+      panelCommands(layout, catalog)
+        .map((category) => ({
+          ...category,
+          commands: category.commands.filter(
+            (c) => shown(c, detected) && matches(c, query),
+          ),
+        }))
+        .filter((category) => category.commands.length),
+    [layout, catalog, query, detected],
   );
-  const send = (text: string) => {
+  const send = (text: string, enter = true) => {
     if (!live) return;
     // Only this session: commands are never mirrored to broadcast targets.
     void invoke("session_input", {
       id: live.id,
-      bytes: [...new TextEncoder().encode(text + "\r")],
+      bytes: [...new TextEncoder().encode(enter ? text + "\r" : text)],
     })
       .then(onFocusTerminal)
       .catch(error);
   };
   const choose = (command: SshCommand) => {
     if (command.storage) return onStorage();
+    if (command.insert) return send(commandText(command, { probe }), false);
     if (command.param || command.danger)
       return setPending({
         command,
@@ -274,10 +295,8 @@ function Commands({
           onChange={(e) => setQuery(e.target.value)}
         />
       </label>
-      <p className="hint">
-        Commands are typed into this terminal. Close editors or pagers first.
-      </p>
-      {rootShellOpen ? (
+      <p className="hint">{hint}</p>
+      {!onRootShell ? null : rootShellOpen ? (
         <div className="ssh-root" data-ssh-root="open">
           <KeyRound size={13} />
           <span>Commands assume the root shell; sudo is left out.</span>
@@ -346,8 +365,13 @@ function Commands({
           )}
           {problem && <p className="hint">{problem}</p>}
           {preview && <code className="ssh-preview">{preview}</code>}
-          {pending.command.danger && (
-            <p className="hint">This changes the remote system.</p>
+          {pending.command.danger && !pending.command.custom && (
+            <p className="hint">
+              This changes the remote system
+              {/upgrade|autoremove/.test(pending.command.id)
+                ? "; packages install without asking again in the terminal."
+                : "."}
+            </p>
           )}
           <div className="dialog-actions">
             <button onClick={() => setPending(null)}>Cancel</button>
@@ -362,9 +386,7 @@ function Commands({
         </div>
       )}
       <div className="ssh-command-list">
-        {CATEGORIES.map((category) => {
-          const items = visible.filter((c) => c.category === category);
-          if (!items.length) return null;
+        {categories.map(({ name: category, commands: items }) => {
           const closed = collapsed.includes(category) && !query;
           return (
             <section key={category}>
@@ -398,7 +420,7 @@ function Commands({
                       className={`ssh-command ${command.danger ? "risky" : ""}`}
                       disabled={!enabled || !!reason}
                       title={`${command.label}
-${reason ?? text}`}
+${reason ?? text}${command.insert ? "\nInserted without Enter" : ""}`}
                       data-command={command.id}
                       onClick={() => choose(command)}
                     >
@@ -406,7 +428,11 @@ ${reason ?? text}`}
                       {command.danger && (
                         <span
                           className="ssh-badge"
-                          aria-label="Changes the system"
+                          aria-label={
+                            command.custom
+                              ? "Asks for confirmation"
+                              : "Changes the system"
+                          }
                         >
                           <TriangleAlert size={12} aria-hidden="true" />
                         </span>
@@ -417,7 +443,7 @@ ${reason ?? text}`}
             </section>
           );
         })}
-        {!visible.length && <p className="hint">No matching commands.</p>}
+        {!categories.length && <p className="hint">No matching commands.</p>}
       </div>
     </div>
   );

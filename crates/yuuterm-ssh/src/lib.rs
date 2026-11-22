@@ -3,6 +3,7 @@ mod agent_pipe;
 pub mod files;
 pub mod hex;
 mod identity;
+pub mod key_file;
 pub mod local;
 mod ownership;
 mod serial;

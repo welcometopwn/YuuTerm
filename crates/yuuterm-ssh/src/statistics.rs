@@ -1,4 +1,5 @@
 //! Opt-in Linux host sampling. Fixed command only; no terminal input is injected.
+pub(crate) mod windows;
 use anyhow::{Result, ensure};
 use serde::Serialize;
 

@@ -114,11 +114,21 @@ impl client::Handler for Handler {
     }
 }
 
+/// A refused password or key passphrase; a saved one is forgotten.
 #[derive(Debug)]
-pub(crate) struct PasswordRejected;
+pub(crate) struct PasswordRejected {
+    passphrase: bool,
+}
+impl PasswordRejected {
+    const PASSWORD: Self = Self { passphrase: false };
+}
 impl std::fmt::Display for PasswordRejected {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("SSH password rejected; enter the password again")
+        f.write_str(if self.passphrase {
+            "Private-key passphrase rejected; enter it again"
+        } else {
+            "SSH password rejected; enter the password again"
+        })
     }
 }
 impl std::error::Error for PasswordRejected {}
@@ -250,7 +260,7 @@ async fn password_authenticate(
         Reply::Failure {
             partial_success: false,
             ..
-        } => return Err(PasswordRejected.into()),
+        } => return Err(PasswordRejected::PASSWORD.into()),
         Reply::InfoRequest { prompts, .. }
             if prompts.len() == 1
                 && !prompts[0].echo
@@ -271,7 +281,7 @@ async fn password_authenticate(
         Reply::Failure {
             partial_success: false,
             ..
-        } => Err(PasswordRejected.into()),
+        } => Err(PasswordRejected::PASSWORD.into()),
         _ => bail!(
             "SSH requires additional authentication; repeated or multi-factor prompts are unsupported"
         ),
@@ -365,15 +375,13 @@ async fn authenticate(
                 "Select a private-key file in session settings"
             );
             let path = profile.ssh.key_file.clone();
-            let key = tokio::task::spawn_blocking(move || -> Result<_> {
-                use std::io::Read;
-                let f = std::fs::File::open(&path).context("Cannot access the selected private-key file")?;
-                anyhow::ensure!(f.metadata()?.is_file(), "Private-key path is not a file");
-                let mut encoded = zeroize::Zeroizing::new(String::new());
-                f.take(1024*1024+1).read_to_string(&mut encoded)?;
-                anyhow::ensure!(encoded.len() <= 1024*1024,"Private-key file exceeds the 1 MiB limit");
-                russh::keys::decode_secret_key(&encoded, None).context("Cannot load key. For encrypted keys, load it into the Windows agent; passphrase entry is not implemented yet")
-            }).await??;
+            let key = tokio::task::spawn_blocking(move || {
+                crate::key_file::load(&path, password.as_deref().map(String::as_str))
+            })
+            .await??;
+            let Some(key) = key else {
+                return Err(PasswordRejected { passphrase: true }.into());
+            };
             anyhow::ensure!(
                 !matches!(key.algorithm(), russh::keys::Algorithm::Rsa { .. }) || hash.is_some(),
                 "Server does not advertise RSA-SHA2; legacy RSA-SHA1 authentication is disabled"
@@ -476,7 +484,10 @@ pub(crate) async fn run(
     request_success(&mut channel)
         .await
         .context("PTY request failed")?;
-    channel.request_shell(true).await?;
+    match profile.ssh.remote_command {
+        Some(command) => channel.exec(true, command).await?,
+        None => channel.request_shell(true).await?,
+    }
     request_success(&mut channel)
         .await
         .context("Shell request failed")?;
@@ -522,6 +533,8 @@ pub(crate) async fn run(
     let mut dirty = false;
     let process_slot = Arc::new(tokio::sync::Semaphore::new(1));
     let stats_slot = Arc::new(tokio::sync::Semaphore::new(1));
+    // Set once the Linux sampler failed and the Windows one answered.
+    let windows_host = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let probe_slot = Arc::new(tokio::sync::Semaphore::new(1));
     let mut folder_cancel: Option<tokio_util::sync::CancellationToken> = None;
     loop {
@@ -552,9 +565,10 @@ pub(crate) async fn run(
                 Some(Command::Statistics(reply)) => {
                     if let Ok(slot) = stats_slot.clone().try_acquire_owned() {
                         let connection = connection.clone();
+                        let windows_host = windows_host.clone();
                         tasks.spawn(async move {
                             let _slot = slot;
-                            let result = read_statistics(&connection).await.map_err(|e| format!("{e:#}"));
+                            let result = read_statistics(&connection, &windows_host).await.map_err(|e| format!("{e:#}"));
                             let _ = reply.send(result);
                         });
                     } else { let _ = reply.send(Err("Statistics request already in progress".into())); }
@@ -620,15 +634,40 @@ pub(crate) async fn run(
     Ok(())
 }
 
+/// Linux sampling first; a host where it fails and the Windows sampler
+/// answers (Windows OpenSSH) uses the Windows sampler from then on.
 async fn read_statistics(
     connection: &client::Handle<Handler>,
+    windows_host: &std::sync::atomic::AtomicBool,
 ) -> Result<crate::statistics::Sample> {
-    let (data, request_ms) = read_metrics(connection, MetricCommand::Statistics).await?;
-    crate::statistics::parse(&data, request_ms)
+    use std::sync::atomic::Ordering;
+    let windows = || async {
+        let (data, request_ms) = read_metrics(connection, MetricCommand::WindowsStatistics).await?;
+        crate::statistics::windows::parse(&data, request_ms)
+    };
+    if windows_host.load(Ordering::Relaxed) {
+        return windows().await;
+    }
+    let linux = async {
+        let (data, request_ms) = read_metrics(connection, MetricCommand::Statistics).await?;
+        crate::statistics::parse(&data, request_ms)
+    }
+    .await;
+    match linux {
+        Ok(sample) => Ok(sample),
+        Err(error) => match windows().await {
+            Ok(sample) => {
+                windows_host.store(true, Ordering::Relaxed);
+                Ok(sample)
+            }
+            Err(_) => Err(error),
+        },
+    }
 }
 
 enum MetricCommand {
     Statistics,
+    WindowsStatistics,
     Processes,
 }
 
@@ -636,16 +675,22 @@ async fn read_metrics(
     connection: &client::Handle<Handler>,
     command: MetricCommand,
 ) -> Result<(Vec<u8>, f64)> {
-    let (command, limit) = match command {
-        MetricCommand::Statistics => (crate::statistics::COMMAND, 16384),
-        MetricCommand::Processes => (crate::statistics::PROCESSES_COMMAND, 4096),
+    let windows_command;
+    // PowerShell starts slower than sh; give it longer.
+    let (command, limit, deadline) = match command {
+        MetricCommand::Statistics => (crate::statistics::COMMAND, 16384, 3),
+        MetricCommand::WindowsStatistics => {
+            windows_command = crate::statistics::windows::command();
+            (windows_command.as_str(), 16384, 8)
+        }
+        MetricCommand::Processes => (crate::statistics::PROCESSES_COMMAND, 4096, 3),
     };
     let started = std::time::Instant::now();
     let mut channel =
         tokio::time::timeout(Duration::from_secs(3), connection.channel_open_session())
             .await
             .context("Statistics channel timed out")??;
-    let result = tokio::time::timeout(Duration::from_secs(3), async {
+    let result = tokio::time::timeout(Duration::from_secs(deadline), async {
         channel.exec(true, command).await?;
         let mut data = Vec::new();
         let mut request_ms = None;

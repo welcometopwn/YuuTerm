@@ -18,6 +18,7 @@ mod log_rotation;
 mod moba_icons;
 mod open_with;
 mod output_log;
+mod popout;
 mod project_page;
 mod rdp;
 mod rdp_cert;
@@ -71,6 +72,7 @@ struct Session {
     saved_password: Option<ssh_gateways::SavedPassword>,
     /// Saved passwords of the SSH gateways, by hop.
     saved_gateway_passwords: Vec<Option<ssh_gateways::SavedPassword>>,
+    popout: popout::Popout,
     #[cfg(feature = "capture")]
     input_trace: Vec<Vec<u8>>,
 }
@@ -90,6 +92,9 @@ struct Backend {
     next_edit: std::sync::atomic::AtomicU64,
     pending_import: Mutex<Option<session_transfer::Draft>>,
     log_close_waiting: std::sync::atomic::AtomicBool,
+    next_popout: std::sync::atomic::AtomicU64,
+    /// Set once the application runs; used to notify the main window.
+    app: std::sync::OnceLock<tauri::AppHandle>,
     #[cfg(feature = "capture")]
     startup_origin: std::time::Instant,
     #[cfg(feature = "capture")]
@@ -206,6 +211,8 @@ struct Poll {
     chunks: Vec<Vec<u8>>,
     more: bool,
     logging: Option<output_log::Status>,
+    /// The terminal output currently goes to an own window.
+    popped: bool,
 }
 
 #[derive(Serialize)]
@@ -509,6 +516,24 @@ async fn rdp_forget_certificate(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn pick_key_file(window: WebviewWindow) -> Result<Option<String>, String> {
+    main_only(&window)?;
+    let mut dialog = rfd::AsyncFileDialog::new()
+        .set_parent(&window)
+        .set_title("Choose a private-key file");
+    if let Some(home) = std::env::var_os("USERPROFILE") {
+        let ssh = std::path::Path::new(&home).join(".ssh");
+        if ssh.is_dir() {
+            dialog = dialog.set_directory(ssh);
+        }
+    }
+    Ok(dialog
+        .pick_file()
+        .await
+        .map(|f| f.path().to_string_lossy().into_owned()))
 }
 
 #[tauri::command]
@@ -1000,6 +1025,8 @@ fn save_appearance(
     statistics: config::StatisticsSettings,
     local_shell: Option<yuuterm_core::LocalShell>,
     update_check: Option<bool>,
+    ssh_commands: Option<Vec<config::CommandCategory>>,
+    rdp_commands: Option<Vec<config::CommandCategory>>,
 ) -> Result<Preferences, String> {
     main_only(&window)?;
     let mut c = lock(&state.config)?;
@@ -1024,6 +1051,12 @@ fn save_appearance(
     }
     if let Some(enabled) = update_check {
         candidate.update_check = enabled;
+    }
+    if let Some(layout) = ssh_commands {
+        candidate.ssh_commands = layout;
+    }
+    if let Some(layout) = rdp_commands {
+        candidate.rdp_commands = layout;
     }
     candidate.validate()?;
     if !capture_only {
@@ -1071,8 +1104,7 @@ fn session_start(
 const RDP_TOOLS_KEY: u64 = 1 << 50;
 
 /// Remote tools beside an RDP session: an SSH session to the same host on port
-/// 22 with password sign-in, using the RDP bookmark's saved password and account
-/// (or the native prompt). Only the RDP bookmark ID crosses IPC.
+/// chooses. Only the RDP bookmark ID crosses IPC.
 #[tauri::command]
 fn rdp_tools_start(
     window: WebviewWindow,
@@ -1096,7 +1128,13 @@ fn rdp_tools_start(
         port: 22,
         username: rdp.username.clone(),
         ssh: yuuterm_core::SshSettings {
-            auth: yuuterm_core::SshAuth::Password,
+            auth: match rdp.rdp.tools_sign_in {
+                yuuterm_core::RdpToolsSignIn::Password => yuuterm_core::SshAuth::Password,
+                yuuterm_core::RdpToolsSignIn::Agent => yuuterm_core::SshAuth::WindowsAgent,
+                yuuterm_core::RdpToolsSignIn::KeyFile => yuuterm_core::SshAuth::KeyFile,
+            },
+            key_file: rdp.rdp.tools_key_file.clone(),
+            remote_command: Some("powershell.exe -NoLogo"),
             ..Default::default()
         },
         ..Default::default()
@@ -1159,6 +1197,37 @@ fn start_session(
             target,
             owner: owner.id,
         });
+    } else if profile.protocol == yuuterm_core::Protocol::Ssh
+        && profile.ssh.auth == yuuterm_core::SshAuth::KeyFile
+        && yuuterm_ssh::key_file::encrypted(&profile.ssh.key_file)
+    {
+        let keyed = Profile {
+            protocol: yuuterm_core::Protocol::Ssh,
+            ssh: profile.ssh.clone(),
+            ..owner.clone()
+        };
+        let parent = window.hwnd().map_err(|e| e.to_string())?;
+        let caption = format!("{} · SSH key passphrase", profile.name);
+        let resolved = credentials::resolve_for_account(
+            parent,
+            &keyed,
+            &caption,
+            owner.protocol.default_port(),
+            false,
+        )?
+        .ok_or("Sign-in cancelled; nothing was sent")?;
+        if let Some(identity) = &resolved.new_identity
+            && let Err(e) = persist_credential_id(state, owner.id, identity)
+        {
+            eprintln!("ssh: saved-passphrase identity not persisted: {e}");
+        }
+        password = Some(zeroize::Zeroizing::new(
+            resolved.secret.expose_for_authentication().to_owned(),
+        ));
+        saved_password = resolved.saved.map(|target| ssh_gateways::SavedPassword {
+            target,
+            owner: owner.id,
+        });
     }
     let mut sessions = lock(&state.sessions)?;
     if sessions
@@ -1181,13 +1250,17 @@ fn start_session(
         None
     };
     let wake = Arc::new(tokio::sync::Notify::new());
-    let signal = wake.clone();
+    let popout = popout::Popout::default();
+    let (signal, popout_signal) = (wake.clone(), popout.wake.clone());
     let (live, output) = state
         .engine
         .connect_streaming_via(
             profile,
             hops,
-            Arc::new(move || signal.notify_one()),
+            Arc::new(move || {
+                signal.notify_one();
+                popout_signal.notify_one();
+            }),
             password,
         )
         .map_err(|e| e.to_string())?;
@@ -1220,6 +1293,7 @@ fn start_session(
             }),
             saved_password,
             saved_gateway_passwords,
+            popout,
             #[cfg(feature = "capture")]
             input_trace: Vec::new(),
         },
@@ -1273,18 +1347,8 @@ fn drain_poll(state: &Backend, id: u64) -> Result<Poll, String> {
     } else {
         None
     };
-    let mut chunks = Vec::new();
-    for _ in 0..2 {
-        match s.output.try_recv() {
-            Ok(bytes) => {
-                if let Some(log) = &mut s.output_log {
-                    log.record(&bytes);
-                }
-                chunks.push(bytes);
-            }
-            Err(_) => break,
-        }
-    }
+    let popped = s.popout.window.is_some();
+    let chunks = if popped { Vec::new() } else { take_output(s) };
     if s.live.snapshot().finished
         && s.output.is_empty()
         && let Some(log) = &mut s.output_log
@@ -1306,9 +1370,27 @@ fn drain_poll(state: &Backend, id: u64) -> Result<Poll, String> {
     Ok(Poll {
         meta,
         chunks,
-        more: !s.output.is_empty(),
+        more: !popped && !s.output.is_empty(),
         logging: s.output_log.as_ref().map(|l| l.status()),
+        popped,
     })
+}
+/// Up to two output chunks for whichever window shows the terminal; every
+/// chunk is logged exactly once.
+fn take_output(s: &mut Session) -> Vec<Vec<u8>> {
+    let mut chunks = Vec::new();
+    for _ in 0..2 {
+        match s.output.try_recv() {
+            Ok(bytes) => {
+                if let Some(log) = &mut s.output_log {
+                    log.record(&bytes);
+                }
+                chunks.push(bytes);
+            }
+            Err(_) => break,
+        }
+    }
+    chunks
 }
 fn meta(s: Snapshot, files: Option<Vec<FileEntry>>) -> SessionMeta {
     SessionMeta {
@@ -1332,6 +1414,9 @@ fn session_input(
     bytes: Vec<u8>,
 ) -> Result<(), String> {
     main_only(&window)?;
+    send_input(&state, id, bytes)
+}
+fn send_input(state: &Backend, id: u64, bytes: Vec<u8>) -> Result<(), String> {
     let mut sessions = lock(&state.sessions)?;
     let s = sessions.get_mut(&id).ok_or("Connection no longer exists")?;
     if !s.live.snapshot().connected {
@@ -1405,6 +1490,10 @@ fn capture_scope(window: WebviewWindow, state: State<Backend>) -> Result<String,
             | "pollwait"
             | "icons"
             | "about"
+            | "commands"
+            | "settings-layout"
+            | "popout"
+            | "session-layout"
             | "qol"
             | "vnc"
             | "rdp"
@@ -1599,7 +1688,8 @@ fn session_disconnect(window: WebviewWindow, state: State<Backend>, id: u64) -> 
 #[tauri::command]
 fn session_close(window: WebviewWindow, state: State<Backend>, id: u64) -> Result<(), String> {
     main_only(&window)?;
-    lock(&state.sessions)?.remove(&id);
+    let removed = lock(&state.sessions)?.remove(&id);
+    popout::close_for(window.app_handle(), removed.and_then(|s| s.popout.window));
     Ok(())
 }
 #[tauri::command]
@@ -2103,6 +2193,8 @@ fn backend() -> Result<Backend, Box<dyn std::error::Error>> {
         next_edit: std::sync::atomic::AtomicU64::new(1),
         pending_import: Mutex::new(None),
         log_close_waiting: std::sync::atomic::AtomicBool::new(false),
+        next_popout: std::sync::atomic::AtomicU64::new(1),
+        app: std::sync::OnceLock::new(),
         #[cfg(feature = "capture")]
         startup_origin: std::time::Instant::now(),
         #[cfg(feature = "capture")]
@@ -2136,6 +2228,7 @@ fn main() {
     tauri::Builder::default()
         .setup(move |app| {
             app.manage(backend()?);
+            let _ = app.state::<Backend>().app.set(app.handle().clone());
             let builder = tauri::WebviewWindowBuilder::new(
                 app,
                 "main",
@@ -2172,6 +2265,15 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            // Pop-out terminal windows only release their session.
+            if window.label().starts_with(popout::PREFIX) {
+                if matches!(event, tauri::WindowEvent::Destroyed)
+                    && let Some(state) = window.try_state::<Backend>()
+                {
+                    popout::release(&state, window.label(), None);
+                }
+                return;
+            }
             if matches!(
                 event,
                 tauri::WindowEvent::Resized(_)
@@ -2231,6 +2333,7 @@ fn main() {
                 }
             }
             if matches!(event, tauri::WindowEvent::Destroyed) {
+                popout::close_all(window.app_handle());
                 #[cfg(feature = "rdp-probe")]
                 rdp_probe::destroy();
                 rdp::close_all();
@@ -2262,6 +2365,17 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            popout::popout_open,
+            popout::popout_attach,
+            popout::popout_poll,
+            popout::popout_input,
+            popout::popout_resize,
+            popout::popout_return,
+            popout::popout_recall,
+            popout::popout_take_returned,
+            popout::capture_popout_report,
+            popout::capture_popout_result,
+            popout::capture_popout_taskbar_ids,
             project_page::open_project_page,
             project_page::open_release_page,
             update_check::check_for_update,
@@ -2288,6 +2402,7 @@ fn main() {
             rdp_session,
             rdp_snapshot,
             forget_saved_password,
+            pick_key_file,
             rdp_ssh_available,
             rdp_certificate_remembered,
             rdp_forget_certificate,

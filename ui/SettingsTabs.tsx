@@ -2,12 +2,15 @@ export function SettingsTabs({
   prefix,
   label,
   tabs,
+  labels,
   value,
   onChange,
 }: {
   prefix: string;
   label: string;
   tabs: readonly string[];
+  /** Display names; defaults to the capitalized tab name. */
+  labels?: Record<string, string>;
   value: string;
   onChange: (tab: string) => void;
 }) {
@@ -40,7 +43,7 @@ export function SettingsTabs({
             }
           }}
         >
-          {name[0].toUpperCase() + name.slice(1)}
+          {labels?.[name] ?? name[0].toUpperCase() + name.slice(1)}
         </button>
       ))}
     </div>

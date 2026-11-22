@@ -1,5 +1,15 @@
 # RSA advisory exposure review
 
+Recheck, 22 November 2026: the authentication source changed because private-key
+files may now be passphrase-protected. Keys are decoded by russh's
+`decode_secret_key` with the passphrase; encrypted OpenSSH keys use
+bcrypt-pbkdf and AES, encrypted PKCS#8 and PEM keys use PBES2 or the legacy PEM
+cipher. None of these paths performs RSA ciphertext decryption, and an RSA key is
+still used only for in-process RSA-SHA2 signing. The rsa, ssh-key and russh
+versions and checksums are unchanged. The manifest records the new
+authentication source hash; the accepted risk and the 15 December 2026 review
+date are unchanged.
+
 Recheck, 15 November 2026: russh 0.65.1 replaces 0.65.0. `src/helpers.rs`, which
 dispatches RSA signing, is byte-identical to 0.65.0. The other changes are a
 public key file comment parser, a packet length check that now counts the MAC tag,

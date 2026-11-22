@@ -1,11 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type MutableRefObject,
+} from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
-import { ArrowUp, ArrowDown, X } from "lucide-react";
+import { SerializeAddon } from "@xterm/addon-serialize";
+import { ArrowUp, ArrowDown, ExternalLink, X } from "lucide-react";
 import type {
   Live,
   Meta,
@@ -26,8 +33,29 @@ import {
 } from "./terminal-font";
 import { ContextMenu, type MenuState } from "./ContextMenu";
 
+/** Moves terminal content between the main window and a pop-out. */
+export type HandOff = {
+  /** Stops polling after the current chunks are written; returns the content. */
+  take: () => Promise<string>;
+  /** Polls again after `take`. */
+  resume: () => void;
+};
+
+/** Serialized scrollback carried to the other window, in lines. */
+const HANDOFF_LINES = 5000;
+
 interface Props {
   live: Live;
+  /** "popout": this pane is the only terminal of a pop-out window. */
+  transport?: "session" | "popout";
+  /** Content written before the first output (pop-out start). */
+  initial?: string;
+  handOff?: MutableRefObject<HandOff | null>;
+  /** Window title of a pop-out opened from this pane. */
+  title?: string;
+  /** Opens the pop-out when the value increases. */
+  popoutRequest?: number;
+  onPopped?: (popped: boolean) => void;
   protocol: Protocol;
   fontSize: number;
   fontFamily: string;
@@ -116,6 +144,8 @@ export function TerminalPane(props: Props) {
     null,
   );
   const refit = useRef<() => void>(() => {});
+  const [popped, setPopped] = useState(false);
+  const popOut = useRef<() => void>(() => {});
   useEffect(() => {
     let mounted = true;
     void Promise.all([
@@ -190,6 +220,39 @@ export function TerminalPane(props: Props) {
     let tail = Promise.resolve(),
       pendingInputs = 0;
     const id = current.current.live.id;
+    const popout = current.current.transport === "popout";
+    // A pop-out window's session is bound in the backend; it never sends an ID.
+    const target = popout ? {} : { id };
+    const command = (name: "poll" | "input" | "resize") =>
+      popout ? `popout_${name}` : `session_${name}`;
+    const serializer = new SerializeAddon();
+    term.loadAddon(serializer);
+    // take() parks the poll loop between iterations so no output is fetched
+    // after the content was serialized; resume() lets it continue.
+    let hold: {
+      gate: Promise<void>;
+      release: () => void;
+      reached: () => void;
+    } | null = null;
+    let wasPopped = false;
+    let looping = true;
+    const handOff: HandOff = {
+      take: () =>
+        new Promise<string>((resolve) => {
+          const done = () =>
+            resolve(serializer.serialize({ scrollback: HANDOFF_LINES }));
+          if (!looping) return done();
+          let release = () => {};
+          const gate = new Promise<void>((r) => (release = r));
+          hold = { gate, release, reached: done };
+        }),
+      resume: () => {
+        const parked = hold;
+        hold = null;
+        parked?.release();
+      },
+    };
+    if (current.current.handOff) current.current.handOff.current = handOff;
     const fail = (e: unknown) => {
       if (!stopped) current.current.onError(String(e));
     };
@@ -203,7 +266,10 @@ export function TerminalPane(props: Props) {
       tail = tail
         .then(async () => {
           if (!stopped)
-            await invoke("session_input", { id, bytes: Array.from(bytes) });
+            await invoke(command("input"), {
+              ...target,
+              bytes: Array.from(bytes),
+            });
         })
         .catch(fail)
         .finally(() => {
@@ -303,7 +369,7 @@ export function TerminalPane(props: Props) {
       const next = `${cols}:${rows}`;
       if (meta?.connected && size !== next) {
         size = next;
-        void invoke("session_resize", { id, rows, cols }).catch(fail);
+        void invoke(command("resize"), { ...target, rows, cols }).catch(fail);
       }
     };
     const observer = new ResizeObserver(resize);
@@ -311,9 +377,35 @@ export function TerminalPane(props: Props) {
     observer.observe(element);
     const poll = async () => {
       try {
+        const initial = current.current.initial;
+        if (initial)
+          await new Promise<void>((resolve) => term.write(initial, resolve));
         while (!stopped) {
-          const p = await invoke<Poll>("session_poll", { id, waitMs: 200 });
+          if (hold) {
+            hold.reached();
+            await hold.gate;
+            if (stopped) break;
+          }
+          const p = await invoke<Poll>(command("poll"), {
+            ...target,
+            waitMs: 200,
+          });
           if (stopped) break;
+          if (!popout && !!p.popped !== wasPopped) {
+            wasPopped = !!p.popped;
+            setPopped(wasPopped);
+            if (!wasPopped) {
+              // Back from the pop-out: its content replaces this screen.
+              const back = await invoke<string | null>("popout_take_returned", {
+                id,
+              });
+              if (back) {
+                term.reset();
+                await new Promise<void>((resolve) => term.write(back, resolve));
+              }
+              resize();
+            }
+          }
           if (current.current.fixture) {
             element.dataset.logBytes = String(p.logging?.bytes ?? 0);
             element.dataset.logPath = p.logging?.path ?? "";
@@ -408,11 +500,36 @@ export function TerminalPane(props: Props) {
         }
       } catch (e) {
         fail(e);
+      } finally {
+        looping = false;
+        hold?.reached();
       }
     };
     void poll();
+    popOut.current = () => {
+      if (popout || stopped || !meta?.connected) return;
+      void (async () => {
+        const snapshot = await handOff.take();
+        try {
+          await invoke("popout_open", {
+            id,
+            title: current.current.title || "Terminal",
+            fontSize: current.current.fontSize,
+            snapshot,
+          });
+        } catch (e) {
+          fail(e);
+        } finally {
+          handOff.resume();
+        }
+      })();
+    };
     return () => {
       stopped = true;
+      handOff.resume();
+      popOut.current = () => {};
+      if (current.current.handOff?.current === handOff)
+        current.current.handOff.current = null;
       pasteText.current = () => {};
       setContextMenu(null);
       refit.current = () => {};
@@ -439,6 +556,10 @@ export function TerminalPane(props: Props) {
   useEffect(() => {
     if (props.findRequest > 0) openFind();
   }, [props.findRequest]);
+  useEffect(() => {
+    if ((props.popoutRequest ?? 0) > 0) popOut.current();
+  }, [props.popoutRequest]);
+  useEffect(() => props.onPopped?.(popped), [popped]);
   useEffect(() => {
     if (!findOpen) return;
     const timer = setTimeout(() => runFind(false, true), 150);
@@ -591,6 +712,21 @@ export function TerminalPane(props: Props) {
           </button>
         </div>
       )}
+      {popped && (
+        <div className="terminal-popped" role="status">
+          <ExternalLink size={18} />
+          <p>This terminal is open in its own window.</p>
+          <button
+            onClick={() =>
+              void invoke("popout_recall", { id: props.live.id }).catch(
+                props.onError,
+              )
+            }
+          >
+            Bring back
+          </button>
+        </div>
+      )}
       {props.protocol === "Telnet" && props.live.telnetLineEditing && (
         <TelnetLineInput
           key={props.live.id}
@@ -603,7 +739,10 @@ export function TerminalPane(props: Props) {
       <div
         className="terminal-host"
         ref={host}
-        style={{ background: props.theme.background }}
+        style={{
+          background: props.theme.background,
+          display: popped ? "none" : undefined,
+        }}
         onMouseDown={() => current.current.onFocus()}
         onContextMenu={(event) => {
           event.preventDefault();
@@ -638,6 +777,18 @@ export function TerminalPane(props: Props) {
               },
               { label: "Select all", run: () => term.selectAll() },
               { label: "Find in terminal", run: openFind },
+              ...(current.current.transport === "popout" ||
+              current.current.live.telnetLineEditing
+                ? []
+                : [
+                    {
+                      label: "Open in own window",
+                      disabled:
+                        !current.current.live.meta?.connected ||
+                        current.current.live.meta?.finished,
+                      run: () => popOut.current(),
+                    },
+                  ]),
             ],
           });
         }}

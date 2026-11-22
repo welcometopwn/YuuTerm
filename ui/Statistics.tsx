@@ -6,7 +6,7 @@ import {
   type ReactNode,
 } from "react";
 import { memoryPair, networkRate } from "./statistics-format";
-import type { StatisticsSettings } from "./types";
+import type { StatisticsItem, StatisticsSettings } from "./types";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -99,10 +99,17 @@ function Stat({
 export function Statistics({
   id,
   networkUnit,
+  hidden = [],
+  intervalMs = 1000,
+  processes = true,
 }: {
   id: number;
   networkUnit: StatisticsSettings["network_unit"];
+  hidden?: StatisticsItem[];
+  intervalMs?: number;
+  processes?: boolean;
 }) {
+  const shown = (item: StatisticsItem) => !hidden.includes(item);
   const hostname = useRef<string | null>(null);
   const generation = useRef(0);
   const processCache = useRef<{ at: number; rows: Process[] } | null>(null);
@@ -121,6 +128,7 @@ export function Statistics({
     setTooltip(null);
   };
   const showProcesses = (element: HTMLElement) => {
+    if (!processes) return;
     const rect = element.getBoundingClientRect();
     setTooltip({
       left: Math.max(8, Math.min(rect.left, window.innerWidth - 328)),
@@ -199,7 +207,7 @@ export function Statistics({
         hostname.current ??= next.hostname;
         setSample(next);
         setError("");
-        timer = setTimeout(() => void poll(), 1000);
+        timer = setTimeout(() => void poll(), intervalMs);
       } catch (e) {
         if (active) {
           setSample(null);
@@ -270,100 +278,118 @@ export function Statistics({
         </span>
       ) : sample ? (
         <>
-          <Stat
-            className="stat-host"
-            title={`${sample.os}\n${sample.kernel}\nHost: ${sample.hostname}`}
-          >
-            <Server />
-            <strong>{hostname.current ?? sample.hostname}</strong>
-          </Stat>
-          <span
-            className="stat-cpu"
-            tabIndex={0}
-            aria-label="CPU usage; show top five processes"
-            aria-describedby={tooltip ? `cpu-processes-${id}` : undefined}
-            onMouseEnter={(e) => showProcesses(e.currentTarget)}
-            onMouseLeave={hideProcesses}
-            onFocus={(e) => showProcesses(e.currentTarget)}
-            onBlur={hideProcesses}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") hideProcesses();
-            }}
-          >
-            <Cpu />
-            <strong>
-              <span className="cpu-value">
-                {cpu === null ? "…" : cpu.toFixed(0)}
-              </span>
-              {cpu === null ? "" : "%"}
-            </strong>
-            <svg
-              width="48"
-              height="16"
-              viewBox="0 0 48 16"
-              aria-label="Recent CPU usage"
+          {shown("Host") && (
+            <Stat
+              className="stat-host"
+              title={`${sample.os}\n${sample.kernel}\nHost: ${sample.hostname}`}
             >
-              <polyline
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                points={history
-                  .map(
-                    (v, i) =>
-                      `${48 - (history.length - 1 - i) * 2},${15 - v * 0.14}`,
-                  )
-                  .join(" ")}
-              />
-            </svg>
-          </span>
-          <Stat
-            className="stat-memory"
-            title={`RAM used: ${sample.ram_used_percent.toFixed(0)}% · used / total`}
-          >
-            <MemoryStick />
-            <strong>
-              {memoryPair(sample.ram_used_bytes, sample.ram_total_bytes)}
-            </strong>
-          </Stat>
-          <Stat
-            key={networkUnit}
-            grow
-            className="stat-upload"
-            title={`Upload · ${sample.interface ?? "No interface"}\nTotal sent: ${sample.tx_bytes === null ? "Unavailable" : size(sample.tx_bytes)} (${sample.tx_bytes ?? "—"} bytes)\nInterface total since its counter reset; includes other connections`}
-          >
-            <ArrowUp />
-            <strong>{networkRate(network.tx, networkUnit)}</strong>
-          </Stat>
-          <Stat
-            key={networkUnit}
-            grow
-            className="stat-download"
-            title={`Download · ${sample.interface ?? "No interface"}\nTotal received: ${sample.rx_bytes === null ? "Unavailable" : size(sample.rx_bytes)} (${sample.rx_bytes ?? "—"} bytes)\nInterface total since its counter reset; includes other connections`}
-          >
-            <ArrowDown />
-            <strong>{networkRate(network.rx, networkUnit)}</strong>
-          </Stat>
-          <Stat
-            className="stat-uptime"
-            title={`Uptime: ${Math.floor(sample.uptime_seconds)} seconds`}
-          >
-            <Clock3 />
-            <strong>{uptime(sample.uptime_seconds)}</strong>
-          </Stat>
-          <Stat
-            className="stat-disk"
-            title={`Root filesystem · df -Pk /\n${sample.disk_summary}`}
-          >
-            <HardDrive />
-            <strong>/ {sample.disk_used_percent}%</strong>
-          </Stat>
-          <Stat
-            className="stat-latency"
-            title="SSH request time, including channel setup and server acknowledgement; not ICMP ping"
-          >
-            <Gauge />
-            <strong>{sample.request_ms.toFixed(0)} ms</strong>
-          </Stat>
+              <Server />
+              <strong>{hostname.current ?? sample.hostname}</strong>
+            </Stat>
+          )}
+          {shown("Cpu") && (
+            <span
+              className="stat-cpu"
+              tabIndex={0}
+              aria-label={
+                processes ? "CPU usage; show top five processes" : "CPU usage"
+              }
+              aria-describedby={tooltip ? `cpu-processes-${id}` : undefined}
+              onMouseEnter={(e) => showProcesses(e.currentTarget)}
+              onMouseLeave={hideProcesses}
+              onFocus={(e) => showProcesses(e.currentTarget)}
+              onBlur={hideProcesses}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") hideProcesses();
+              }}
+            >
+              <Cpu />
+              <strong>
+                <span className="cpu-value">
+                  {cpu === null ? "…" : cpu.toFixed(0)}
+                </span>
+                {cpu === null ? "" : "%"}
+              </strong>
+              <svg
+                width="48"
+                height="16"
+                viewBox="0 0 48 16"
+                aria-label="Recent CPU usage"
+              >
+                <polyline
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  points={history
+                    .map(
+                      (v, i) =>
+                        `${48 - (history.length - 1 - i) * 2},${15 - v * 0.14}`,
+                    )
+                    .join(" ")}
+                />
+              </svg>
+            </span>
+          )}
+          {shown("Memory") && (
+            <Stat
+              className="stat-memory"
+              title={`RAM used: ${sample.ram_used_percent.toFixed(0)}% · used / total`}
+            >
+              <MemoryStick />
+              <strong>
+                {memoryPair(sample.ram_used_bytes, sample.ram_total_bytes)}
+              </strong>
+            </Stat>
+          )}
+          {shown("Network") && (
+            <>
+              <Stat
+                key={networkUnit}
+                grow
+                className="stat-upload"
+                title={`Upload · ${sample.interface ?? "No interface"}\nTotal sent: ${sample.tx_bytes === null ? "Unavailable" : size(sample.tx_bytes)} (${sample.tx_bytes ?? "—"} bytes)\nInterface total since its counter reset; includes other connections`}
+              >
+                <ArrowUp />
+                <strong>{networkRate(network.tx, networkUnit)}</strong>
+              </Stat>
+              <Stat
+                key={networkUnit}
+                grow
+                className="stat-download"
+                title={`Download · ${sample.interface ?? "No interface"}\nTotal received: ${sample.rx_bytes === null ? "Unavailable" : size(sample.rx_bytes)} (${sample.rx_bytes ?? "—"} bytes)\nInterface total since its counter reset; includes other connections`}
+              >
+                <ArrowDown />
+                <strong>{networkRate(network.rx, networkUnit)}</strong>
+              </Stat>
+            </>
+          )}
+          {shown("Uptime") && (
+            <Stat
+              className="stat-uptime"
+              title={`Uptime: ${Math.floor(sample.uptime_seconds)} seconds`}
+            >
+              <Clock3 />
+              <strong>{uptime(sample.uptime_seconds)}</strong>
+            </Stat>
+          )}
+          {shown("Disk") && (
+            <Stat
+              className="stat-disk"
+              title={`Root filesystem · df -Pk /\n${sample.disk_summary}`}
+            >
+              <HardDrive />
+              <strong>/ {sample.disk_used_percent}%</strong>
+            </Stat>
+          )}
+          {shown("Latency") && (
+            <Stat
+              className="stat-latency"
+              title="SSH request time, including channel setup and server acknowledgement; not ICMP ping"
+            >
+              <Gauge />
+              <strong>{sample.request_ms.toFixed(0)} ms</strong>
+            </Stat>
+          )}
         </>
       ) : (
         <span className="stat-message" role="status">

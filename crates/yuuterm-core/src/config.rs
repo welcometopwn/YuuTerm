@@ -35,6 +35,89 @@ pub struct Preferences {
     pub local_shell: crate::LocalShell,
     #[serde(default = "default_true")]
     pub update_check: bool,
+    /// SSH tools layout; empty keeps the built-in order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ssh_commands: Vec<CommandCategory>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rdp_commands: Vec<CommandCategory>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CommandCategory {
+    pub name: String,
+    #[serde(default)]
+    pub hidden: bool,
+    pub items: Vec<CommandItem>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
+pub enum CommandItem {
+    Builtin {
+        id: String,
+    },
+    Custom {
+        label: String,
+        command: String,
+        mode: CommandMode,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CommandMode {
+    Run,
+    Confirm,
+    /// Typed without Enter so the user can finish the line.
+    Insert,
+}
+
+/// Command text is typed into a terminal followed by Enter, so a control
+/// character (newline, escape) could run more than the confirmed line.
+pub fn validate_ssh_commands(categories: &[CommandCategory]) -> Result<(), String> {
+    let text = |s: &str, max: usize| {
+        !s.trim().is_empty() && s.len() <= max && !s.chars().any(char::is_control)
+    };
+    if categories.len() > 64 {
+        return Err("At most 64 command categories.".into());
+    }
+    let mut names = std::collections::HashSet::new();
+    let mut builtins = std::collections::HashSet::new();
+    let mut custom = 0;
+    for category in categories {
+        if !text(&category.name, 48) || !names.insert(category.name.trim().to_lowercase()) {
+            return Err("Command categories need unique names of 1–48 bytes.".into());
+        }
+        if category.items.len() > 200 {
+            return Err("At most 200 commands per category.".into());
+        }
+        for item in &category.items {
+            match item {
+                CommandItem::Builtin { id } => {
+                    if id.is_empty()
+                        || id.len() > 48
+                        || !id
+                            .bytes()
+                            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+                        || !builtins.insert(id.as_str())
+                    {
+                        return Err("Invalid built-in command reference.".into());
+                    }
+                }
+                CommandItem::Custom { label, command, .. } => {
+                    custom += 1;
+                    if !text(label, 64) || !text(command, 4096) {
+                        return Err("Commands need a name (1–64 bytes) and a single-line command (1–4096 bytes) without control characters.".into());
+                    }
+                }
+            }
+        }
+    }
+    if custom > 500 {
+        return Err("At most 500 custom commands.".into());
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy, Default, Serialize, Deserialize)]
@@ -282,6 +365,8 @@ impl Preferences {
 
     pub fn validate(&self) -> Result<(), String> {
         self.highlighting.validate()?;
+        validate_ssh_commands(&self.ssh_commands)?;
+        validate_ssh_commands(&self.rdp_commands)?;
         if self.version != 1
             || !validate_terminal_font(&self.font_family)
             || !validate_theme(&self.theme)
@@ -700,6 +785,67 @@ mod tests {
             !serde_json::from_str::<Preferences>(off)
                 .unwrap()
                 .update_check
+        );
+    }
+
+    #[test]
+    fn ssh_command_layout_round_trips_and_rejects_unsafe_text() {
+        let json = r#"{"version":1,"profiles":[],"mocha":false,"font_size":14.0,"ssh_commands":[{"name":"Docker","items":[{"kind":"custom","label":"Compose up","command":"docker compose up -d","mode":"confirm"},{"kind":"builtin","id":"docker-ps"}]},{"name":"Power","hidden":true,"items":[]}]}"#;
+        let p: Preferences = serde_json::from_str(json).unwrap();
+        assert!(p.validate().is_ok());
+        assert_eq!(p.ssh_commands[0].items.len(), 2);
+        assert!(p.ssh_commands[1].hidden);
+        let again: Preferences = serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
+        assert_eq!(again.ssh_commands, p.ssh_commands);
+        assert!(
+            !serde_json::to_string(&Preferences::fresh())
+                .unwrap()
+                .contains("ssh_commands")
+        );
+
+        let custom = |name: &str, label: &str, command: &str| CommandCategory {
+            name: name.into(),
+            hidden: false,
+            items: vec![CommandItem::Custom {
+                label: label.into(),
+                command: command.into(),
+                mode: CommandMode::Run,
+            }],
+        };
+        assert!(validate_ssh_commands(&[custom("Mine", "Up", "uptime")]).is_ok());
+        for (label, command) in [
+            ("Up", "uptime\nreboot"),
+            ("Up", "uptime\r"),
+            ("Up", "printf '\u{1b}'"),
+            ("Up", " "),
+            ("", "uptime"),
+        ] {
+            assert!(
+                validate_ssh_commands(&[custom("Mine", label, command)]).is_err(),
+                "{command:?}"
+            );
+        }
+        assert!(validate_ssh_commands(&[custom("Mine", "Up", &"x".repeat(4097))]).is_err());
+        let twice = [custom("Mine", "A", "a"), custom("mine ", "B", "b")];
+        assert!(validate_ssh_commands(&twice).is_err(), "duplicate names");
+        let builtin = |id: &str| CommandCategory {
+            name: "System".into(),
+            hidden: false,
+            items: vec![
+                CommandItem::Builtin { id: id.into() },
+                CommandItem::Builtin {
+                    id: "memory".into(),
+                },
+            ],
+        };
+        assert!(validate_ssh_commands(&[builtin("htop")]).is_ok());
+        assert!(validate_ssh_commands(&[builtin("memory")]).is_err());
+        assert!(validate_ssh_commands(&[builtin("Bad ID")]).is_err());
+        assert!(
+            serde_json::from_str::<CommandItem>(
+                r#"{"kind":"custom","label":"a","command":"b","mode":"run","extra":1}"#
+            )
+            .is_err()
         );
     }
 

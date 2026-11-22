@@ -49,8 +49,13 @@ export async function checkLocalTerminal(ids: number[]) {
       return width >= 40;
     }, "The console follows the pane size (width reported by the shell)");
     await sleep(300);
-    await type("Clear-Host; Write-Host 'YuuTerm 0.2.0' -ForegroundColor Cyan; Write-Host 'Windows remote workspace' -ForegroundColor White; Write-Host ''; Write-Host 'SSH / SFTP    RDP    VNC    TELNET    SERIAL'; Write-Host 'Tabs, split panes, file transfers and X11 forwarding'; Write-Host ''; Write-Host 'Local terminal demonstration' -ForegroundColor DarkGray\r");
-    await until(() => text().includes("Local terminal demonstration"), "The local demonstration renders");
+    await type(
+      "Clear-Host; Write-Host 'YuuTerm 0.2.0' -ForegroundColor Cyan; Write-Host 'Windows remote workspace' -ForegroundColor White; Write-Host ''; Write-Host 'SSH / SFTP    RDP    VNC    TELNET    SERIAL'; Write-Host 'Tabs, split panes, file transfers and X11 forwarding'; Write-Host ''; Write-Host 'Local terminal demonstration' -ForegroundColor DarkGray\r",
+    );
+    await until(
+      () => text().includes("Local terminal demonstration"),
+      "The local demonstration renders",
+    );
     await sleep(700);
     await invoke("capture_still", { name: "local-terminal" });
     await sleep(1500);
