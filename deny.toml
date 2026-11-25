@@ -10,7 +10,11 @@ db-urls = ["https://github.com/RustSec/advisory-db"]
 unmaintained = "all"
 unsound = "all"
 yanked = "deny"
-ignore = []
+ignore = [
+    # Unmaintained, no vulnerability. A required dependency of russh-sftp 3.0.1
+    # (latest) for timestamps; no alternative without replacing the SFTP crate.
+    { id = "RUSTSEC-2026-0543", reason = "chrono is a fixed dependency of the latest russh-sftp; unmaintained only" },
+]
 
 [licenses]
 confidence-threshold = 0.95
