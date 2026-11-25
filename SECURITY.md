@@ -12,10 +12,6 @@ fixes, and this is a one-person project, so I can't promise a response time.
 
 ## Known limitations
 
-- **RSA key files:** the Rust `rsa` crate used for SSH is affected by
-  [RUSTSEC-2023-0071](https://rustsec.org/advisories/RUSTSEC-2023-0071.html), a
-  timing side channel. There is no fixed version yet. If you can, use an Ed25519
-  key or the Windows OpenSSH agent instead of an RSA key file.
 - **RDP:** YuuTerm uses the Remote Desktop control built into Windows. When you
   remember a server certificate, YuuTerm checks it before your password is sent
   and blocks the connection if it changed. This check works with TLS up to 1.2;
