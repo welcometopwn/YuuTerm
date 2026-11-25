@@ -11,7 +11,8 @@ use windows::{
 };
 
 const HOST: &str = "api.github.com";
-const PATH: &str = "/repos/welcometopwn/yuuterm/releases/latest";
+// Not /releases/latest: it skips pre-releases, and every public release so far is one.
+const PATH: &str = "/repos/welcometopwn/yuuterm/releases?per_page=10";
 const MAX_BODY: usize = 512 * 1024;
 const TIMEOUT_MS: i32 = 10_000;
 
@@ -43,10 +44,19 @@ fn version(text: &str) -> Option<[u64; 3]> {
 fn tag_name(body: &[u8]) -> Result<String, String> {
     let json: serde_json::Value =
         serde_json::from_slice(body).map_err(|_| "The update server sent an invalid answer")?;
-    json.get("tag_name")
-        .and_then(|t| t.as_str())
-        .filter(|t| version(t).is_some())
-        .map(str::to_owned)
+    let releases = json
+        .as_array()
+        .ok_or("The update server sent an invalid answer")?;
+    if releases.is_empty() {
+        return Err("No public release exists yet".into());
+    }
+    releases
+        .iter()
+        .filter(|r| r.get("draft").and_then(|d| d.as_bool()) != Some(true))
+        .filter_map(|r| r.get("tag_name").and_then(|t| t.as_str()))
+        .filter_map(|t| version(t).map(|v| (v, t)))
+        .max_by_key(|(v, _)| *v)
+        .map(|(_, t)| t.to_owned())
         .ok_or_else(|| "The update server sent no valid version".into())
 }
 
@@ -166,13 +176,17 @@ mod tests {
     }
 
     #[test]
-    fn only_a_valid_tag_is_accepted_from_the_server() {
+    fn the_newest_valid_release_wins_including_pre_releases() {
         assert_eq!(
-            tag_name(br#"{"tag_name":"v1.2.3","x":1}"#).unwrap(),
-            "v1.2.3"
+            tag_name(
+                br#"[{"tag_name":"v0.3.1","prerelease":true},{"tag_name":"v0.3.3","prerelease":true},{"tag_name":"v0.3.10","draft":true},{"tag_name":"nightly"}]"#
+            )
+            .unwrap(),
+            "v0.3.3"
         );
-        assert!(tag_name(br#"{"tag_name":"nightly"}"#).is_err());
-        assert!(tag_name(br#"{"name":"v1.2.3"}"#).is_err());
+        assert!(tag_name(b"[]").unwrap_err().contains("No public release"));
+        assert!(tag_name(br#"[{"tag_name":"nightly"}]"#).is_err());
+        assert!(tag_name(br#"{"tag_name":"v1.2.3"}"#).is_err());
         assert!(tag_name(b"<html>").is_err());
     }
 

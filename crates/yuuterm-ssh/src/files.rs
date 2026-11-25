@@ -645,13 +645,27 @@ pub fn windows_name(name: &str) -> String {
         })
         .collect();
     let cleaned = cleaned.trim_end_matches(['.', ' ']);
+    // Windows ignores spaces before the extension when matching device names.
     let stem = cleaned
         .split('.')
         .next()
         .unwrap_or_default()
+        .trim_end_matches(' ')
         .to_ascii_uppercase();
-    let reserved = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-        || (stem.starts_with("COM") || stem.starts_with("LPT")) && stem.len() == 4;
+    let numbered = |prefix: &str| {
+        stem.strip_prefix(prefix).is_some_and(|rest| {
+            let mut digits = rest.chars();
+            digits
+                .next()
+                .is_some_and(|d| d.is_ascii_digit() || "¹²³".contains(d))
+                && digits.next().is_none()
+        })
+    };
+    let reserved = matches!(
+        stem.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) || numbered("COM")
+        || numbered("LPT");
     if cleaned.is_empty() || reserved {
         format!("remote-{cleaned}")
     } else {
@@ -1115,6 +1129,13 @@ mod editor_tests {
         assert_eq!(windows_name("COM1"), "remote-COM1");
         assert_eq!(windows_name("..."), "remote-");
         assert_eq!(windows_name("normal name.txt"), "normal name.txt");
+        assert_eq!(windows_name("COM\u{b9}"), "remote-COM\u{b9}");
+        assert_eq!(windows_name("lpt\u{b3}.txt"), "remote-lpt\u{b3}.txt");
+        assert_eq!(windows_name("CONIN$"), "remote-CONIN$");
+        assert_eq!(windows_name("conout$.log"), "remote-conout$.log");
+        assert_eq!(windows_name("NUL .txt"), "remote-NUL .txt");
+        assert_eq!(windows_name("COM10"), "COM10");
+        assert_eq!(windows_name("console.txt"), "console.txt");
     }
     #[test]
     fn nano_path_is_quoted_and_control_input_is_refused() {

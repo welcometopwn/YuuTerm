@@ -83,15 +83,15 @@ export function MoveToGroup({
         </p>
         {(invalid || failure) && <p role="alert">{invalid || failure}</p>}
         <div className="dialog-actions">
-          <button type="button" disabled={busy} onClick={onClose}>
-            Cancel
-          </button>
           <button
             className="primary"
             type="submit"
             disabled={busy || !!invalid}
           >
             {busy ? "Moving…" : "Move"}
+          </button>
+          <button type="button" disabled={busy} onClick={onClose}>
+            Cancel
           </button>
         </div>
       </form>

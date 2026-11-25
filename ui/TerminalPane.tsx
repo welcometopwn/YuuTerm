@@ -20,7 +20,11 @@ import type {
   Highlighting,
   Protocol,
   OutputLogStatus,
+  CursorStyle,
 } from "./types";
+
+const xtermCursor = (style?: CursorStyle) =>
+  style === "Underline" ? "underline" : style === "Bar" ? "bar" : "block";
 import { terminalHighlighting } from "./terminal-highlighting";
 import { TelnetLineInput } from "./TelnetLineInput";
 import { fixtureTerminals } from "./fixture-terminals";
@@ -60,6 +64,8 @@ interface Props {
   fontSize: number;
   fontFamily: string;
   scrollbackLines: number;
+  cursorStyle?: CursorStyle;
+  steadyCursor?: boolean;
   theme: ITheme;
   highlighting: Highlighting;
   onMeta: (id: number, m: Meta) => void;
@@ -173,7 +179,8 @@ export function TerminalPane(props: Props) {
       fontWeight: "normal",
       fontWeightBold: "bold",
       scrollback: current.current.scrollbackLines,
-      cursorBlink: true,
+      cursorBlink: !current.current.steadyCursor,
+      cursorStyle: xtermCursor(current.current.cursorStyle),
       allowProposedApi: true, // pinned xterm marker/decoration API; no remote JS
       convertEol: false,
       theme: current.current.theme,
@@ -614,6 +621,11 @@ export function TerminalPane(props: Props) {
     if (terminal.current)
       terminal.current.options.scrollback = props.scrollbackLines;
   }, [props.scrollbackLines]);
+  useEffect(() => {
+    if (!terminal.current) return;
+    terminal.current.options.cursorBlink = !props.steadyCursor;
+    terminal.current.options.cursorStyle = xtermCursor(props.cursorStyle);
+  }, [props.cursorStyle, props.steadyCursor]);
   useEffect(() => {
     if (terminal.current) terminal.current.options.theme = props.theme;
   }, [props.theme, fontReady]);

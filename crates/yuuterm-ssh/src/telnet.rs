@@ -348,6 +348,7 @@ pub(crate) async fn run(
                 Some(Command::ToolsProbe(reply))=>{let _=reply.send(Err("Remote tools require SSH".into()));},
                 Some(Command::FolderSizes{reply,..})=>{let _=reply.send(Err("Folder sizes require SSH".into()));},
                 Some(Command::CancelFolderSizes)=>{},
+                Some(Command::Break(reply))=>{let _=reply.send(Err("Break requires SERIAL".into()));},
                 None=>break,
             }
         }

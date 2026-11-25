@@ -111,6 +111,8 @@ pub enum Command {
         cols: u16,
     },
     Scroll(i32),
+    /// SERIAL only: drive the line low for a fixed break pulse.
+    Break(oneshot::Sender<Result<(), String>>),
     Browse(String),
     Statistics(oneshot::Sender<Result<statistics::Sample, String>>),
     Processes(oneshot::Sender<Result<Vec<statistics::Process>, String>>),

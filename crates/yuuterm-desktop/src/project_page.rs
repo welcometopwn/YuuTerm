@@ -11,7 +11,7 @@ use windows::{
 };
 
 pub const URL: &str = "https://github.com/welcometopwn/yuuterm";
-const RELEASES_URL: &str = "https://github.com/welcometopwn/yuuterm/releases/latest";
+const RELEASES_URL: &str = "https://github.com/welcometopwn/yuuterm/releases";
 
 #[tauri::command]
 pub async fn open_project_page() -> Result<(), String> {

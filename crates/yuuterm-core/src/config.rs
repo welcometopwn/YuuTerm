@@ -27,6 +27,13 @@ pub struct Preferences {
     pub font_family: String,
     #[serde(default = "default_scrollback")]
     pub scrollback_lines: u32,
+    // Written only when changed, so settings left at the defaults stay readable
+    // by older versions, which reject unknown fields.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub cursor_style: CursorStyle,
+    /// The cursor blinks unless this is set.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub steady_cursor: bool,
     #[serde(default)]
     pub highlighting: Highlighting,
     #[serde(default)]
@@ -40,6 +47,18 @@ pub struct Preferences {
     pub ssh_commands: Vec<CommandCategory>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub rdp_commands: Vec<CommandCategory>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CursorStyle {
+    #[default]
+    Block,
+    Underline,
+    Bar,
+}
+
+fn is_default<T: Default + PartialEq>(value: &T) -> bool {
+    *value == T::default()
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -657,6 +676,28 @@ mod tests {
         assert!(serde_json::from_str::<Preferences>(&invalid).is_err());
         std::fs::remove_file(path).unwrap();
         std::fs::remove_dir(dir).unwrap();
+    }
+
+    #[test]
+    fn cursor_settings_default_to_a_blinking_block_and_stay_out_of_default_files() {
+        let prefs = Preferences::fresh();
+        assert_eq!(prefs.cursor_style, CursorStyle::Block);
+        assert!(!prefs.steady_cursor);
+        let text = serde_json::to_string(&prefs).unwrap();
+        assert!(!text.contains("cursor"), "{text}");
+        let mut changed = prefs;
+        changed.cursor_style = CursorStyle::Underline;
+        changed.steady_cursor = true;
+        let back: Preferences =
+            serde_json::from_str(&serde_json::to_string(&changed).unwrap()).unwrap();
+        assert_eq!(back.cursor_style, CursorStyle::Underline);
+        assert!(back.steady_cursor);
+        assert!(
+            serde_json::from_str::<Preferences>(
+                r#"{"version":1,"profiles":[],"mocha":false,"font_size":14,"cursor_style":"Beam"}"#
+            )
+            .is_err()
+        );
     }
 
     #[test]

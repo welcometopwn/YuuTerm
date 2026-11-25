@@ -182,7 +182,6 @@ export function RdpTools({
               now?
             </p>
             <div className="dialog-actions">
-              <button onClick={() => setConfirm(null)}>Cancel</button>
               <button
                 className="primary"
                 onClick={() => {
@@ -196,6 +195,7 @@ export function RdpTools({
               >
                 {confirm === "restart" ? "Restart" : "Shut down"}
               </button>
+              <button onClick={() => setConfirm(null)}>Cancel</button>
             </div>
           </div>
         )}

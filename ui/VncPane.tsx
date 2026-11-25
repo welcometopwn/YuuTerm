@@ -337,14 +337,6 @@ export function VncPane({
           )}
           <div className="dialog-actions">
             <button
-              onClick={() => {
-                setClipboardOpen(false);
-                setClipboardText("");
-              }}
-            >
-              Cancel
-            </button>
-            <button
               disabled={!!clipboardError(clipboardText)}
               onClick={() => {
                 send.current({ kind: "clipboard", text: clipboardText });
@@ -353,6 +345,14 @@ export function VncPane({
               }}
             >
               Send text
+            </button>
+            <button
+              onClick={() => {
+                setClipboardOpen(false);
+                setClipboardText("");
+              }}
+            >
+              Cancel
             </button>
           </div>
         </Modal>
@@ -476,7 +476,6 @@ export function VncPane({
             <dd>{prompt.sha256}</dd>
           </dl>
           <div className="dialog-actions">
-            <button onClick={cancel}>Cancel</button>
             <button
               className="primary"
               disabled={busy}
@@ -493,6 +492,7 @@ export function VncPane({
             >
               Trust this certificate
             </button>
+            <button onClick={cancel}>Cancel</button>
           </div>
         </Modal>
       )}
@@ -526,11 +526,11 @@ export function VncPane({
               </p>
             )}
             <div className="dialog-actions">
-              <button type="button" onClick={cancel}>
-                Cancel
-              </button>
               <button type="submit" className="primary" disabled={busy}>
                 Sign in
+              </button>
+              <button type="button" onClick={cancel}>
+                Cancel
               </button>
             </div>
           </form>

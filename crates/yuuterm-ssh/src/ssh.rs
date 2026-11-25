@@ -620,6 +620,7 @@ pub(crate) async fn run(
                 Some(Command::Browse(path)) => {
                     if file_tx.try_send(crate::files::Request::Browse(path)).is_err() { state.send_modify(|s| s.files_status = "SFTP busy or unavailable; path was not opened".into()); wake(); }
                 }
+                Some(Command::Break(reply)) => { let _ = reply.send(Err("Break requires SERIAL".into())); }
                 None => break,
             },
             _ = tick.tick(), if dirty => {

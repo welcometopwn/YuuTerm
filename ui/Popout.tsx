@@ -6,7 +6,7 @@ import { Undo2 } from "lucide-react";
 import { TerminalPane, type HandOff } from "./TerminalPane";
 import { Modal } from "./Modal";
 import { applyChrome, themeFor, withTextColor } from "./themes";
-import type { Highlighting, Live, Meta, Protocol } from "./types";
+import type { CursorStyle, Highlighting, Live, Meta, Protocol } from "./types";
 
 type Attach = {
   title: string;
@@ -16,6 +16,8 @@ type Attach = {
   font_family: string;
   font_color: string | null;
   scrollback_lines: number;
+  cursor_style: CursorStyle;
+  steady_cursor: boolean;
   theme: string;
   mocha: boolean;
   highlighting: Highlighting;
@@ -106,6 +108,8 @@ export function Popout() {
         fontSize={attach.font_size}
         fontFamily={attach.font_family}
         scrollbackLines={attach.scrollback_lines}
+        cursorStyle={attach.cursor_style}
+        steadyCursor={attach.steady_cursor}
         theme={withTextColor(theme.terminal, attach.font_color)}
         highlighting={attach.highlighting}
         onMeta={(_, m) => setMeta(m)}
@@ -128,7 +132,6 @@ export function Popout() {
           </p>
           <pre>{JSON.stringify(paste.text)}</pre>
           <div className="dialog-actions">
-            <button onClick={() => setPaste(null)}>Cancel</button>
             <button
               className="primary"
               onClick={() => {
@@ -138,6 +141,7 @@ export function Popout() {
             >
               Paste
             </button>
+            <button onClick={() => setPaste(null)}>Cancel</button>
           </div>
         </Modal>
       )}

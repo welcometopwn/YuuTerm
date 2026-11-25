@@ -242,7 +242,9 @@ fn inventory() -> Result<Inventory> {
         process::{Command, Stdio},
         time::Instant,
     };
-    let mut child = Command::new("powershell.exe")
+    // A bare name would also be searched beside the executable (portable folder).
+    let shell = crate::local::shell_path(yuuterm_core::LocalShell::WindowsPowerShell)?;
+    let mut child = Command::new(shell)
         .creation_flags(0x08000000)
         .args([
             "-NoProfile",

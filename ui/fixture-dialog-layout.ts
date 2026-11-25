@@ -24,11 +24,38 @@ export async function checkDialogLayout(
       "#settings-panel-appearance > .settings-card",
     );
     return (
-      cards.length === 2 &&
+      cards.length === 3 &&
       Math.abs(box(cards[0]).top - box(cards[1]).top) < 2 &&
-      box(cards[1]).left > box(cards[0]).right
+      box(cards[1]).left > box(cards[0]).right &&
+      box(cards[2]).top > box(cards[0]).bottom
     );
-  }, "Settings show the appearance cards side by side");
+  }, "Settings show the appearance cards side by side and the preview below");
+  const preview = () =>
+    document.querySelector<HTMLElement>(".terminal-preview")!;
+  const size = document.querySelector<HTMLInputElement>(
+    'input[aria-label="Default terminal font size"]',
+  )!;
+  Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    "value",
+  )!.set!.call(size, "20");
+  size.dispatchEvent(new Event("input", { bubbles: true }));
+  await until(
+    () => getComputedStyle(preview()).fontSize === "20px",
+    "The terminal preview follows the font size before Save",
+  );
+  const cursor = document.querySelector<HTMLSelectElement>(
+    'select[aria-label="Cursor style"]',
+  )!;
+  Object.getOwnPropertyDescriptor(
+    HTMLSelectElement.prototype,
+    "value",
+  )!.set!.call(cursor, "Underline");
+  cursor.dispatchEvent(new Event("change", { bubbles: true }));
+  await until(
+    () => !!document.querySelector(".terminal-preview-cursor.underline.blink"),
+    "The preview shows the chosen cursor style, blinking by default",
+  );
   for (const name of [
     "general",
     "highlighting",
@@ -64,9 +91,9 @@ export async function checkDialogLayout(
       Math.abs(after.width - before.width) < 1
     );
   }, "Settings list the Windows remote-tools commands without the dialog moving");
-  if (keepOpen === "settings") return;
   document.getElementById("settings-tab-appearance")!.click();
   await pause();
+  if (keepOpen === "settings") return;
   document
     .querySelector<HTMLButtonElement>(
       'dialog[open] [aria-label="Close dialog"]',
