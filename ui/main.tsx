@@ -44,6 +44,7 @@ import {
   ArrowLeftRight,
   Route,
   ExternalLink,
+  Zap,
 } from "lucide-react";
 import { TerminalPane } from "./TerminalPane";
 import { terminalFontChoices } from "./terminal-font";
@@ -1629,6 +1630,7 @@ function App() {
             onResize={(expanded) => resizeSidebar(expanded ? 740 : 248)}
             live={activeLive}
             error={error}
+            notify={(text) => setNotice(text, "success")}
             onFolderSizes={
               activeLive
                 ? (path) => showFolderSizes(activeLive.profileId, path)
@@ -1966,6 +1968,21 @@ function App() {
                       <PanelRight size={14} />
                     </button>
                   )}
+                  {currentProtocol === "Serial" && l && !l.meta?.finished && (
+                    <button
+                      className="icon"
+                      aria-label="Send break"
+                      title="Send break (250 ms; e.g. for bootloaders and password recovery)"
+                      disabled={!l.meta?.connected}
+                      onClick={() =>
+                        void invoke("session_break", { id: l.id })
+                          .then(() => setNotice("Break sent", "success"))
+                          .catch(error)
+                      }
+                    >
+                      <Zap size={14} />
+                    </button>
+                  )}
                   {l && !l.meta?.finished ? (
                     <button
                       className="icon"
@@ -2077,6 +2094,7 @@ function App() {
                               key={toolsLive(id)!.id}
                               live={toolsLive(id)}
                               error={error}
+                              notify={(text) => setNotice(text, "success")}
                               onEditOpened={() => setEditMonitoring(true)}
                               onFocusTerminal={() => {}}
                               autoUpload={false}
@@ -2113,6 +2131,8 @@ function App() {
                               fontSize={prefs.font_size}
                               fontFamily={view.font_family}
                               scrollbackLines={prefs.scrollback_lines}
+                              cursorStyle={prefs.cursor_style}
+                              steadyCursor={prefs.steady_cursor}
                               theme={theme.terminal}
                               highlighting={view.highlighting}
                               onMeta={onMeta}
@@ -2181,6 +2201,8 @@ function App() {
                         }
                         fontFamily={p.font_family || view.font_family}
                         scrollbackLines={prefs.scrollback_lines}
+                        cursorStyle={prefs.cursor_style}
+                        steadyCursor={prefs.steady_cursor}
                         theme={withTextColor(theme.terminal, p.font_color)}
                         highlighting={view.highlighting}
                         onMeta={onMeta}
@@ -2256,6 +2278,8 @@ function App() {
                     }
                     fontFamily={p.font_family || view.font_family}
                     scrollbackLines={prefs.scrollback_lines}
+                    cursorStyle={prefs.cursor_style}
+                    steadyCursor={prefs.steady_cursor}
                     theme={withTextColor(theme.terminal, p.font_color)}
                     highlighting={view.highlighting}
                     onMeta={onMeta}
@@ -2469,12 +2493,6 @@ function App() {
           )}
           <div className="dialog-actions">
             <button
-              disabled={actionBusy}
-              onClick={() => setBulkDeleteIds(null)}
-            >
-              Cancel
-            </button>
-            <button
               className="danger"
               disabled={actionBusy}
               onClick={() =>
@@ -2513,6 +2531,12 @@ function App() {
                 ? "Convert to manual and delete"
                 : "Delete"}
             </button>
+            <button
+              disabled={actionBusy}
+              onClick={() => setBulkDeleteIds(null)}
+            >
+              Cancel
+            </button>
           </div>
         </Modal>
       )}
@@ -2545,7 +2569,6 @@ function App() {
                 </p>
               )}
               <div className="dialog-actions">
-                <button onClick={() => setDeleteId(null)}>Cancel</button>
                 <button
                   className="danger"
                   onClick={() => {
@@ -2565,6 +2588,7 @@ function App() {
                     ? "Convert to manual and delete"
                     : "Delete"}
                 </button>
+                <button onClick={() => setDeleteId(null)}>Cancel</button>
               </div>
             </Modal>
           );
@@ -2618,7 +2642,6 @@ function App() {
             profiles={prefs.profiles}
           />
           <div className="dialog-actions">
-            <button onClick={() => setDraft(null)}>Cancel</button>
             <button
               className="primary"
               disabled={
@@ -2640,6 +2663,7 @@ function App() {
             >
               Save session
             </button>
+            <button onClick={() => setDraft(null)}>Cancel</button>
           </div>
         </Modal>
       )}
@@ -2729,7 +2753,6 @@ function App() {
           </p>
           <pre>{JSON.stringify(paste.text)}</pre>
           <div className="dialog-actions">
-            <button onClick={() => setPaste(null)}>Cancel</button>
             <button
               className="primary"
               onClick={() => {
@@ -2748,6 +2771,7 @@ function App() {
             >
               Paste to original session
             </button>
+            <button onClick={() => setPaste(null)}>Cancel</button>
           </div>
         </Modal>
       )}

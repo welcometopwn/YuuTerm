@@ -74,7 +74,23 @@ pub async fn run(
     .context("Serial worker failed")?
 }
 
-fn pump<P: Read + Write + ?Sized>(
+const BREAK_DURATION: Duration = Duration::from_millis(250);
+
+trait LineBreak {
+    fn send_break(&mut self) -> std::io::Result<()>;
+}
+
+impl LineBreak for dyn serialport::SerialPort {
+    fn send_break(&mut self) -> std::io::Result<()> {
+        let set = serialport::SerialPort::set_break(self).map_err(std::io::Error::other);
+        std::thread::sleep(BREAK_DURATION);
+        // Always release the line, even when asserting it failed midway.
+        let clear = serialport::SerialPort::clear_break(self).map_err(std::io::Error::other);
+        set.and(clear)
+    }
+}
+
+fn pump<P: Read + Write + LineBreak + ?Sized>(
     port: &mut P,
     mut commands: mpsc::Receiver<Command>,
     state: watch::Sender<Snapshot>,
@@ -118,6 +134,13 @@ fn pump<P: Read + Write + ?Sized>(
             }
             Ok(Command::Resize { rows, cols }) => {
                 terminal.resize(rows, cols);
+            }
+            Ok(Command::Break(reply)) => {
+                // Some USB adapters cannot signal a break; report it and keep the session.
+                let _ = reply.send(
+                    port.send_break()
+                        .map_err(|e| format!("This device did not send the break: {e}")),
+                );
             }
             Ok(Command::Scroll(delta)) if output.is_none() => {
                 terminal.scroll(delta);
@@ -175,6 +198,17 @@ mod tests {
     struct Device {
         input: Vec<u8>,
         reads: usize,
+        breaks: usize,
+        refuse_break: bool,
+    }
+    impl LineBreak for Device {
+        fn send_break(&mut self) -> std::io::Result<()> {
+            self.breaks += 1;
+            if self.refuse_break {
+                return Err(std::io::ErrorKind::Unsupported.into());
+            }
+            Ok(())
+        }
     }
     impl Read for Device {
         fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
@@ -229,6 +263,8 @@ mod tests {
         let mut device = Device {
             input: vec![],
             reads: 0,
+            breaks: 0,
+            refuse_break: false,
         };
         let wakes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let signal = wakes.clone();
@@ -258,6 +294,56 @@ mod tests {
         );
     }
     #[test]
+    fn break_command_pulses_the_line_once_and_keeps_input_order() {
+        let (tx, rx) = mpsc::channel(32);
+        let (reply, replied) = tokio::sync::oneshot::channel();
+        tx.try_send(Command::Break(reply)).unwrap();
+        tx.try_send(Command::Input(vec![b'a'])).unwrap();
+        let mut device = Device {
+            input: vec![],
+            reads: 0,
+            breaks: 0,
+            refuse_break: false,
+        };
+        assert!(
+            pump(
+                &mut device,
+                rx,
+                state(),
+                Arc::new(|| {}),
+                None,
+                CancellationToken::new()
+            )
+            .is_err()
+        );
+        assert_eq!(device.breaks, 1);
+        assert_eq!(replied.blocking_recv().unwrap(), Ok(()));
+        assert_eq!(device.input, b"a");
+    }
+    #[test]
+    fn a_refused_break_is_reported_and_the_session_keeps_running() {
+        let (tx, rx) = mpsc::channel(32);
+        let (reply, replied) = tokio::sync::oneshot::channel();
+        tx.try_send(Command::Break(reply)).unwrap();
+        tx.try_send(Command::Input(vec![b'a'])).unwrap();
+        let mut device = Device {
+            input: vec![],
+            reads: 0,
+            breaks: 0,
+            refuse_break: true,
+        };
+        let _ = pump(
+            &mut device,
+            rx,
+            state(),
+            Arc::new(|| {}),
+            None,
+            CancellationToken::new(),
+        );
+        assert!(replied.blocking_recv().unwrap().is_err());
+        assert_eq!(device.input, b"a");
+    }
+    #[test]
     fn cancellation_releases_worker_when_renderer_is_full() {
         let (tx, rx) = mpsc::channel(32);
         let (out, _reader) = mpsc::channel(1);
@@ -269,6 +355,8 @@ mod tests {
             let mut device = Device {
                 input: vec![],
                 reads: 0,
+                breaks: 0,
+                refuse_break: false,
             };
             let r = pump(&mut device, rx, state(), Arc::new(|| {}), Some(out), token);
             finished.send((r.is_ok(), device.reads)).unwrap();

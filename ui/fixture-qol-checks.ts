@@ -401,7 +401,7 @@ export async function checkQol(
   );
   click("Delete selected items");
   await until(
-    () => !!button("Delete selected permanently"),
+    () => !!button("Delete"),
     "Bulk delete lists items and requires confirmation",
   );
   button("Cancel").click();
@@ -413,16 +413,27 @@ export async function checkQol(
     throw new Error("Cancel deleted a file");
   click("Delete selected items");
   await until(
-    () => !!button("Delete selected permanently"),
+    () => !!button("Delete"),
     "Bulk delete confirmation can be reopened",
   );
-  button("Delete selected permanently").click();
+  button("Delete").click();
   await until(
     () =>
       !document.querySelector("dialog[open]") &&
       !document.querySelector('[aria-label="Actions for qol-a.txt"]') &&
       !document.querySelector('[aria-label="Actions for qol-b.txt"]'),
     "Confirmed bulk delete removes only the selected fixture files",
+  );
+  await until(
+    () =>
+      document
+        .querySelector(".app-notice")
+        ?.textContent?.includes("Deleted 2 items") ?? false,
+    "Bulk delete reports its result as a success notice",
+  );
+  await until(
+    () => !document.body.textContent?.includes("Deleted 2 items"),
+    "The success notice disappears on its own",
   );
   pick("logs");
   pick("qol-folder", { ctrlKey: true });
@@ -432,10 +443,10 @@ export async function checkQol(
   );
   click("Delete selected items");
   await until(
-    () => !!button("Delete selected permanently"),
+    () => !!button("Delete"),
     "Directory batch also requires confirmation",
   );
-  button("Delete selected permanently").click();
+  button("Delete").click();
   const prompt = 'dialog[aria-label="Folder is not empty"]';
   await until(
     () => !!document.querySelector(prompt),

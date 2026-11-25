@@ -3,8 +3,6 @@
 pub async fn x11_probe(
     window: tauri::WebviewWindow,
 ) -> Result<yuuterm_ssh::x11::desktop::Probe, String> {
-    if window.label() != "main" {
-        return Err("X11 discovery is available in the main window only".into());
-    }
+    super::main_only(&window)?;
     Ok(yuuterm_ssh::x11::desktop::probe().await)
 }

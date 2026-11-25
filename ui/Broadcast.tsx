@@ -247,7 +247,6 @@ export function Broadcast({
             </p>
           )}
           <div className="dialog-actions">
-            <button onClick={onClose}>Cancel</button>
             <button
               className="primary"
               disabled={
@@ -263,6 +262,7 @@ export function Broadcast({
             >
               Review dispatch
             </button>
+            <button onClick={onClose}>Cancel</button>
           </div>
         </>
       )}

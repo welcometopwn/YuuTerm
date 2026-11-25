@@ -197,7 +197,7 @@ export async function checkRdpFixture(applyLayout: (n: number) => void) {
           trust?.click();
           return !!document.querySelector(".rdp-tools .dot.connected");
         },
-        "Tools sign in over SSH with the RDP account and saved password",
+        "Tools sign in over SSH with the RDP account and the bookmark's tools sign-in",
         45000,
       );
       await until(

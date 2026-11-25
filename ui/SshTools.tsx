@@ -374,7 +374,6 @@ export function Commands({
             </p>
           )}
           <div className="dialog-actions">
-            <button onClick={() => setPending(null)}>Cancel</button>
             <button
               className={pending.command.danger ? "danger" : "primary"}
               disabled={!enabled || problem !== null}
@@ -382,6 +381,7 @@ export function Commands({
             >
               Run
             </button>
+            <button onClick={() => setPending(null)}>Cancel</button>
           </div>
         </div>
       )}

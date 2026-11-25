@@ -95,6 +95,10 @@ export interface Preferences {
   font_size: number;
   font_family: string;
   scrollback_lines: number;
+  /** Absent means Block. */
+  cursor_style?: CursorStyle;
+  /** Absent means the cursor blinks. */
+  steady_cursor?: boolean;
   highlighting: Highlighting;
   statistics: StatisticsSettings;
   local_shell?: LocalShell;
@@ -260,3 +264,5 @@ export const sessionDetail = (p: Profile) =>
   p.protocol === "Local"
     ? localShellLabel(p.local?.shell ?? "PowerShell")
     : p.host;
+
+export type CursorStyle = "Block" | "Underline" | "Bar";

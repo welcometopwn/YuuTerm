@@ -764,6 +764,31 @@ fn session_nano(
     Ok(())
 }
 #[tauri::command]
+async fn session_break(
+    window: WebviewWindow,
+    state: State<'_, Backend>,
+    id: u64,
+) -> Result<(), String> {
+    main_only(&window)?;
+    let (reply, received) = tokio::sync::oneshot::channel();
+    {
+        let sessions = lock(&state.sessions)?;
+        let session = sessions.get(&id).ok_or("Connection no longer exists")?;
+        let snapshot = session.live.snapshot();
+        if snapshot.protocol != yuuterm_core::Protocol::Serial
+            || !snapshot.connected
+            || snapshot.finished
+        {
+            return Err("Break requires an open SERIAL session".into());
+        }
+        session.live.send(Command::Break(reply))?;
+    }
+    tokio::time::timeout(std::time::Duration::from_secs(5), received)
+        .await
+        .map_err(|_| "Break timed out".to_string())?
+        .map_err(|_| "Serial connection closed".to_string())?
+}
+#[tauri::command]
 async fn session_statistics(
     window: WebviewWindow,
     state: State<'_, Backend>,
@@ -1021,6 +1046,8 @@ fn save_appearance(
     font_size: f32,
     font_family: String,
     scrollback_lines: Option<u32>,
+    cursor_style: Option<config::CursorStyle>,
+    steady_cursor: Option<bool>,
     highlighting: config::Highlighting,
     statistics: config::StatisticsSettings,
     local_shell: Option<yuuterm_core::LocalShell>,
@@ -1043,6 +1070,12 @@ fn save_appearance(
     candidate.font_family = font_family;
     if let Some(lines) = scrollback_lines {
         candidate.scrollback_lines = lines;
+    }
+    if let Some(style) = cursor_style {
+        candidate.cursor_style = style;
+    }
+    if let Some(steady) = steady_cursor {
+        candidate.steady_cursor = steady;
     }
     candidate.highlighting = highlighting;
     candidate.statistics = statistics;
@@ -1884,6 +1917,14 @@ fn rdp_fixture() -> Result<Config, Box<dyn std::error::Error>> {
             _ => yuuterm_core::RdpAudio::Off,
         };
     }
+    match std::env::var("YUUTERM_RDP_FIXTURE_TOOLS").as_deref() {
+        Ok("Agent") => profile.rdp.tools_sign_in = yuuterm_core::RdpToolsSignIn::Agent,
+        Ok("KeyFile") => {
+            profile.rdp.tools_sign_in = yuuterm_core::RdpToolsSignIn::KeyFile;
+            profile.rdp.tools_key_file = var("YUUTERM_RDP_FIXTURE_TOOLS_KEY")?;
+        }
+        _ => {}
+    }
     // "ssh-password": the same host and account as an SSH bookmark with
     // password sign-in (Windows OpenSSH on the test host).
     // "ssh-two": two such bookmarks, both connected at once.
@@ -2418,6 +2459,7 @@ fn main() {
             session_start,
             session_poll,
             session_input,
+            session_break,
             session_statistics,
             session_nano,
             session_processes,

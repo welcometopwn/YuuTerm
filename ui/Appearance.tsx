@@ -8,9 +8,10 @@ import { compileRegex } from "./highlight-policy";
 import { terminalFontChoices } from "./terminal-font";
 import { LocalShellSelect } from "./LocalShellSelect";
 import type { UpdateStatus } from "./UpdateNotice";
-import type { Preferences } from "./types";
+import type { CursorStyle, Preferences } from "./types";
 import { defaultHighlighting } from "./highlight-defaults";
 import { HighlightImport } from "./HighlightImport";
+import { TerminalPreview } from "./TerminalPreview";
 import { CommandSettings } from "./CommandSettings";
 import { layoutProblems, layoutToSave, resolveLayout } from "./ssh-commands";
 import { WINDOWS_CATALOG } from "./windows-commands";
@@ -131,6 +132,8 @@ export function Appearance({
           fontSize: draft.font_size,
           fontFamily: draft.font_family,
           scrollbackLines: draft.scrollback_lines,
+          cursorStyle: draft.cursor_style ?? "Block",
+          steadyCursor: draft.steady_cursor ?? false,
           highlighting: draft.highlighting,
           statistics: draft.statistics,
           localShell: draft.local_shell ?? "PowerShell",
@@ -231,11 +234,8 @@ export function Appearance({
                 />
               </label>
             )}
-          </fieldset>
-          <fieldset className="settings-card">
-            <legend>Terminal</legend>
             <label>
-              Default terminal font size
+              Font size
               <input
                 aria-label="Default terminal font size"
                 type="number"
@@ -246,6 +246,36 @@ export function Appearance({
                   setDraft((p) => ({ ...p, font_size: Number(e.target.value) }))
                 }
               />
+            </label>
+          </fieldset>
+          <fieldset className="settings-card">
+            <legend>Cursor and history</legend>
+            <label>
+              Cursor
+              <select
+                aria-label="Cursor style"
+                value={draft.cursor_style ?? "Block"}
+                onChange={(e) =>
+                  setDraft((p) => ({
+                    ...p,
+                    cursor_style: e.target.value as CursorStyle,
+                  }))
+                }
+              >
+                <option value="Block">Block (▮)</option>
+                <option value="Underline">Underline (_)</option>
+                <option value="Bar">Bar (|)</option>
+              </select>
+            </label>
+            <label className="check-label">
+              <input
+                type="checkbox"
+                checked={!draft.steady_cursor}
+                onChange={(e) =>
+                  setDraft((p) => ({ ...p, steady_cursor: !e.target.checked }))
+                }
+              />
+              Blinking cursor
             </label>
             <label>
               Terminal history (lines)
@@ -265,9 +295,18 @@ export function Appearance({
               />
             </label>
             <p className="muted">
-              Applies after Save to all terminals. Reducing the limit discards
-              older output. Zero keeps only the screen.
+              Fewer lines discard older output; 0 keeps only the screen.
             </p>
+          </fieldset>
+          <fieldset className="settings-card wide">
+            <legend>Preview</legend>
+            <TerminalPreview
+              theme={themeFor(draft.theme ?? "", draft.mocha).terminal}
+              fontFamily={draft.font_family}
+              fontSize={draft.font_size}
+              cursorStyle={draft.cursor_style ?? "Block"}
+              blink={!draft.steady_cursor}
+            />
           </fieldset>
         </div>
         <div
@@ -288,11 +327,7 @@ export function Appearance({
                 }
               />
             </label>
-            <p className="muted">
-              Used by the Local terminal button and for new local sessions. Each
-              local session can choose its own shell. Shells that are not
-              installed are greyed out.
-            </p>
+            <p className="muted">Default for new local sessions.</p>
           </fieldset>
           <fieldset className="settings-card">
             <legend>Updates</legend>
@@ -551,7 +586,7 @@ export function Appearance({
                   : update.status === "checking"
                     ? "(checking for new updates…)"
                     : update.status === "latest"
-                      ? "(no new updates)"
+                      ? "(no updates available)"
                       : update.status === "available"
                         ? `(new release ${update.latest} available)`
                         : `(update check failed: ${update.message})`}
@@ -600,15 +635,15 @@ export function Appearance({
         </p>
       )}
       <div className="dialog-actions">
-        <button disabled={busy} onClick={onClose}>
-          Cancel
-        </button>
         <button
           className="primary"
           disabled={!canSave || busy || issues.length > 0}
           onClick={() => void save()}
         >
           {busy ? "Saving…" : "Save settings"}
+        </button>
+        <button disabled={busy} onClick={onClose}>
+          Cancel
         </button>
       </div>
     </Modal>

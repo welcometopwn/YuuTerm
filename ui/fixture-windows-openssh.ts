@@ -123,10 +123,10 @@ export async function checkWindowsOpenSsh(ids: number[], checks: string[]) {
   await wait(() => !!button("Delete"), "File context menu exposes delete");
   button("Delete").click();
   await wait(
-    () => !!button("Delete permanently"),
+    () => !!document.querySelector<HTMLButtonElement>("dialog button.danger")!,
     "Deletion requires explicit confirmation",
   );
-  button("Delete permanently").click();
+  document.querySelector<HTMLButtonElement>("dialog button.danger")!.click();
   await wait(
     () =>
       !row("native renamed ' Ω.txt") && !document.querySelector("dialog[open]"),

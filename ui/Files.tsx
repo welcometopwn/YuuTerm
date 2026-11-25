@@ -134,6 +134,7 @@ function FileCell({ entry, column }: { entry: FileEntry; column: FileColumn }) {
 export function Files({
   live,
   error,
+  notify,
   onEditOpened,
   onFocusTerminal,
   autoUpload,
@@ -154,6 +155,8 @@ export function Files({
   onFolderSizes?: (path: string) => void;
   live?: Live;
   error: (e: unknown) => void;
+  /** Success messages; they disappear on their own. */
+  notify: (text: string) => void;
 }) {
   const layout = useWorkspaceLayout();
   const sort = layout.sort,
@@ -487,7 +490,7 @@ export function Files({
     try {
       await removeTarget(d.target);
       setDialog(null);
-      error("File operation completed");
+      notify("File operation completed");
     } catch (e) {
       setProblem(String(e));
     } finally {
@@ -520,7 +523,7 @@ export function Files({
         setSelected((s) => s.filter((name) => name !== target.entry.name));
       }
       setBulkDelete(null);
-      error(`Deleted ${completed} items`);
+      notify(`Deleted ${completed} ${completed === 1 ? "item" : "items"}`);
     } catch (e) {
       setProblem(`${completed} deleted; stopped. ${String(e)}`);
     } finally {
@@ -564,7 +567,7 @@ export function Files({
         }
         return;
       }
-      error("File operation completed");
+      notify("File operation completed");
     }
   };
   const inspect = async (
@@ -654,7 +657,7 @@ export function Files({
     );
     if (result && !result.cancelled) {
       setDialog(null);
-      error(`${upload ? "Uploaded" : "Downloaded"} ${result.bytes} bytes`);
+      notify(`${upload ? "Uploaded" : "Downloaded"} ${result.bytes} bytes`);
     }
   };
   const copy = (text: string) => {
@@ -662,7 +665,7 @@ export function Files({
       .writeText(text)
       .then(() => {
         setDialog(null);
-        error("File path copied");
+        notify("File path copied");
       })
       .catch((e) => setProblem(String(e)));
   };
@@ -1302,19 +1305,23 @@ export function Files({
             inside?
           </p>
           <div className="dialog-actions">
-            <button onClick={() => nonEmpty.answer(false)}>Cancel</button>
             <button className="danger" onClick={() => nonEmpty.answer(true)}>
               Delete everything
             </button>
+            <button onClick={() => nonEmpty.answer(false)}>Cancel</button>
           </div>
         </Modal>
       )}
       {bulkDelete && (
         <Modal
-          title="Delete selected items"
+          title={`Delete ${bulkDelete.length === 1 ? "item" : `${bulkDelete.length} items`}`}
           onClose={busy ? undefined : () => setBulkDelete(null)}
         >
-          <p>Permanently delete these {bulkDelete.length} items?</p>
+          <p>
+            {bulkDelete.length === 1
+              ? "This item is deleted permanently; the server has no recycle bin."
+              : `These ${bulkDelete.length} items are deleted permanently; the server has no recycle bin.`}
+          </p>
           <ul className="bulk-items">
             {bulkDelete
               .filter((t) => selected.includes(t.entry.name))
@@ -1340,15 +1347,15 @@ export function Files({
                 Cancel remaining
               </button>
             )}
-            <button disabled={busy} onClick={() => setBulkDelete(null)}>
-              Cancel
-            </button>
             <button
               className="danger"
               disabled={busy || !connected}
               onClick={() => void deleteSelected()}
             >
-              Delete selected permanently
+              Delete
+            </button>
+            <button disabled={busy} onClick={() => setBulkDelete(null)}>
+              Cancel
             </button>
           </div>
         </Modal>
@@ -1524,7 +1531,7 @@ export function Files({
             (
               {
                 rename: "Rename",
-                delete: "Delete permanently",
+                delete: "Delete item",
                 permissions: "Permissions",
                 properties: "Properties",
               } as const
@@ -1563,17 +1570,17 @@ export function Files({
           )}
           {dialog.kind === "delete" && (
             <>
-              <p>This permanently removes the selected remote item.</p>
+              <p>It is deleted permanently; the server has no recycle bin.</p>
               <div className="dialog-actions">
-                <button disabled={busy} onClick={() => setDialog(null)}>
-                  Cancel
-                </button>
                 <button
                   className="danger"
                   disabled={busy}
                   onClick={() => void deleteOne(dialog)}
                 >
-                  Delete permanently
+                  Delete
+                </button>
+                <button disabled={busy} onClick={() => setDialog(null)}>
+                  Cancel
                 </button>
               </div>
             </>

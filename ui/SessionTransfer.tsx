@@ -186,9 +186,6 @@ export function SessionTransfer({
             </>
           )}
           <div className="dialog-actions">
-            <button disabled={busy} onClick={close}>
-              Cancel
-            </button>
             <button
               className="primary"
               disabled={
@@ -215,6 +212,9 @@ export function SessionTransfer({
                 : mode === "export"
                   ? "Export file"
                   : "Import sessions"}
+            </button>
+            <button disabled={busy} onClick={close}>
+              Cancel
             </button>
           </div>
         </Modal>
