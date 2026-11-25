@@ -42,7 +42,7 @@ Reviewed 20 October 2026; next review due 15 December 2026 UTC. Maintainer: welc
 verification and signing). YuuTerm explicitly enables russh's `ring` and `rsa`
 features. `ring` does not replace ssh-key's RSA signer. The same engine is used by
 the desktop and legacy terminal application. The reviewed crate archive SHA-256
-values in [the exception manifest](evidence/rsa-exception.json) were verified
+values in the exception manifest (removed with the resolution below) were verified
 against Cargo.lock before extracting source into a disposable folder in this clone.
 
 | Production path | Actual cryptography and boundary |
@@ -110,3 +110,14 @@ over the real named-pipe protocol without a client key file. The synthetic agent
 shares the test process; this test proves protocol delegation, not OS isolation
 or the timing security of a user's installed agent. These are functional tests,
 not side-channel measurements or a cryptographic security proof.
+
+### Resolved (25 November 2026)
+
+RustSec now lists RUSTSEC-2023-0071 as `patched = [">= 0.10.0"]`: the rsa 0.10
+series moves to crypto-bigint with the constant-time mitigations from
+`draft-irtf-cfrg-rsa-guidance`. The russh 0.65.2 update locks rsa 0.10.0 and
+ssh-key 0.7.0-rc.12, so the advisory no longer applies to the graph. The
+accepted-risk exception, its drift guard (`scripts/review-rsa-exception.mjs`,
+`docs/evidence/rsa-exception.json`, its test) and the run-local cargo-deny
+ignore in `scripts/Review-Dependencies.ps1` were removed; cargo-deny now runs
+against the strict global policy. RSA key files stay supported.
